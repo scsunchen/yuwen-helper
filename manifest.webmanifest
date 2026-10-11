@@ -1,0 +1,20 @@
+{
+  "name": "小学语文预习小助手",
+  "short_name": "预习小助手",
+  "description": "按教材版本与年级查询课文讲解、生字拼音笔画数笔顺动画偏旁部首结构",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f7fa",
+  "theme_color": "#d94f4f",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%23d94f4f'/%3E%3Ctext x='256' y='365' font-size='320' text-anchor='middle' fill='%23fff' font-family='serif'%3E语%3C/text%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

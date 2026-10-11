@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<title>小学语文预习小助手</title>
+
+<!-- PWA / 移动端适配 -->
+<meta name="theme-color" content="#d94f4f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="预习小助手">
+<meta name="description" content="小学语文预习小助手：按教材版本与年级，查询课文讲解、一类字二类字拼音笔画数笔顺动画偏旁部首结构">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23d94f4f'/%3E%3Ctext x='50' y='72' font-size='62' text-anchor='middle' fill='%23fff' font-family='serif'%3E语%3C/text%3E%3C/svg%3E">
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ========== 顶部导航 ========== -->
+<header class="topbar">
+  <button class="back-btn" id="backBtn" hidden>‹</button>
+  <h1 class="app-title" id="pageTitle">小学语文预习小助手</h1>
+  <button class="setup-btn" id="setupBtn" title="教材设置">⚙</button>
+</header>
+
+<!-- ========== 页面 1：设置 ========== -->
+<section class="page" id="page-setup">
+  <div class="setup-card">
+    <h2 class="setup-h2">选择教材</h2>
+
+    <div class="field">
+      <label>教材版本</label>
+      <div class="chips" id="textbookChips"></div>
+    </div>
+
+    <div class="field">
+      <label>年级</label>
+      <div class="chips" id="gradeChips"></div>
+    </div>
+
+    <div class="field">
+      <label>册次</label>
+      <div class="chips" id="termChips"></div>
+    </div>
+
+    <button class="primary-btn" id="saveSetup">开始预习</button>
+    <p class="hint">设置会保存在本机，下次打开自动带出。</p>
+  </div>
+</section>
+
+<!-- ========== 页面 2：首页 / 课文选择 ========== -->
+<section class="page" id="page-home" hidden>
+  <div class="current-book" id="currentBook"></div>
+
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="输入课文标题，如「秋天」「静夜思」">
+    <button id="clearSearch" class="clear-btn" hidden>×</button>
+  </div>
+
+  <div id="searchResults" class="lesson-list" hidden></div>
+
+  <div id="catalogView">
+    <div class="section-label">本册课文</div>
+    <div id="catalogList" class="lesson-list"></div>
+  </div>
+</section>
+
+<!-- ========== 页面 3：课程讲解 ========== -->
+<section class="page" id="page-lesson" hidden>
+  <div class="lesson-head">
+    <div class="lesson-title-row">
+      <h2 id="lessonTitle"></h2>
+      <span class="tag" id="lessonType"></span>
+    </div>
+    <div class="lesson-meta" id="lessonMeta"></div>
+    <button class="stroke-entry" id="goCharsBtn">查看本课生字词 ▸</button>
+  </div>
+  <div id="lessonBody"></div>
+</section>
+
+<!-- ========== 页面 4：生字词列表 ========== -->
+<section class="page" id="page-chars" hidden>
+  <div class="tabs" id="charTabs"></div>
+  <div id="charContent"></div>
+</section>
+
+<!-- ========== 弹层：笔顺详情 ========== -->
+<div class="modal" id="strokeModal" hidden>
+  <div class="modal-mask" data-close="1"></div>
+  <div class="modal-panel">
+    <button class="modal-close" data-close="1">×</button>
+
+    <div class="stroke-char-name" id="strokeCharName"></div>
+    <div class="stroke-meta" id="strokeMeta"></div>
+
+    <div class="tian-grid">
+      <svg class="grid-lines" viewBox="0 0 200 200" preserveAspectRatio="none">
+        <rect x="1" y="1" width="198" height="198" fill="none" stroke="currentColor" stroke-opacity=".28" stroke-width="2" stroke-dasharray="8 6"/>
+        <line x1="100" y1="0" x2="100" y2="200" stroke="currentColor" stroke-opacity=".22" stroke-width="1.5" stroke-dasharray="8 6"/>
+        <line x1="0" y1="100" x2="200" y2="100" stroke="currentColor" stroke-opacity=".22" stroke-width="1.5" stroke-dasharray="8 6"/>
+      </svg>
+      <div id="writerTarget"></div>
+    </div>
+
+    <div class="stroke-actions">
+      <button class="act-btn" id="btnPlay">▶ 播放笔顺</button>
+      <button class="act-btn" id="btnLoop">↻ 循环</button>
+      <button class="act-btn" id="btnQuiz">✎ 描红练习</button>
+    </div>
+
+    <div class="speed-row">
+      <span>速度</span>
+      <input type="range" id="speedRange" min="1" max="10" value="5">
+      <span id="speedVal">5x</span>
+    </div>
+
+    <div class="stroke-list" id="strokeList"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="lib/hanzi-writer.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
