@@ -401,20 +401,9 @@ async function renderCharsPage() {
   if (!L) return;
   showPage('chars');
   $('#pageTitle').textContent = `${L.title} · 生字词`;
-  $('#charContent').innerHTML = '<div class="loading">加载生字数据</div>';
 
-  const strokeMap = await ensureCharInfo();
-
-  // 切换标签
-  $('#charTabs').innerHTML = `
-    <div class="tab ${state.charTab === 'one' ? 'active' : ''}" data-tab="one">一类字（会写）</div>
-    <div class="tab ${state.charTab === 'two' ? 'active' : ''}" data-tab="two">二类字（会认）</div>
-    <div class="tab ${state.charTab === 'words' ? 'active' : ''}" data-tab="words">词语积累</div>`;
-
-  $$('#charTabs .tab').forEach(t => t.addEventListener('click', () => {
-    state.charTab = t.dataset.tab;
-    renderCharsPage();
-  }));
+  // 立刻渲染标签，避免等待期间空白
+  renderCharTabs();
 
   if (state.charTab === 'words') { renderWords(L); return; }
 
@@ -424,27 +413,70 @@ async function renderCharsPage() {
     return;
   }
 
-  const cards = chars.map(ch => {
+  // 先用已缓存的 meta 立即出卡片（含拼音/部首/结构/笔画数），
+  // 笔顺分片在后台加载，加载完再补全“是否可播放”的标记。
+  const ready = !!state.charInfoMap[state.book?.key];
+  $('#charContent').innerHTML = `
+    <div class="section-label">点击汉字查看拼音、笔画数、笔顺动画</div>
+    ${L.charsAuto ? '<div class="auto-note">本课讲解尚未整理，生字表由「本册写字表」自动分配，供预习参考。</div>' : ''}
+    ${ready ? '' : '<div class="auto-note" style="background:#f0f6ff;border-left-color:#3a7bd5;color:#2a5298">正在加载本册笔顺数据，稍后即可播放动画…</div>'}
+    <div class="char-grid">${renderCharCards(chars)}</div>`;
+
+  bindCharCards();
+
+  // 后台加载笔顺分片
+  try {
+    await ensureCharInfo();
+    // 若仍停留在本页且未切标签，刷新卡片状态
+    if (state.page === 'chars' && state.charTab !== 'words') {
+      const stillChars = state.charTab === 'one' ? (L.classOne || []) : (L.classTwo || []);
+      if (stillChars.join('') === chars.join('')) {
+        $('#charContent').innerHTML = `
+          <div class="section-label">点击汉字查看拼音、笔画数、笔顺动画</div>
+          ${L.charsAuto ? '<div class="auto-note">本课讲解尚未整理，生字表由「本册写字表」自动分配，供预习参考。</div>' : ''}
+          <div class="char-grid">${renderCharCards(chars)}</div>`;
+        bindCharCards();
+      }
+    }
+  } catch (e) {
+    toast('笔顺数据加载失败，拼音与字义仍可查看');
+  }
+}
+
+/** 渲染生字卡片 HTML */
+function renderCharCards(chars) {
+  const strokeMap = state.charInfoMap[state.book?.key] || {};
+  return chars.map(ch => {
     const info = strokeMap[ch] || state.metaMap[ch] || {};
     const py = (info.p || []).length ? info.p[0] : '';
     const n = info.n || (info.st ? info.st.length : '');
     const r = info.r || '';
-    return `<div class="char-card" data-char="${esc(ch)}">
+    const hasAnim = !!(strokeMap[ch] && strokeMap[ch].st);
+    return `<div class="char-card${hasAnim ? '' : ' no-anim'}" data-char="${esc(ch)}">
       <div class="cc-pinyin">${esc(py)}</div>
       <div class="cc-char">${esc(ch)}</div>
       <div class="cc-info">${n ? n + '画' : ''}${r ? ' · ' + esc(r) : ''}</div>
       <div class="cc-play">✎</div>
     </div>`;
   }).join('');
+}
 
-  $('#charContent').innerHTML = `
-    <div class="section-label">点击汉字查看拼音、笔画数、笔顺动画</div>
-    ${L.charsAuto ? '<div class="auto-note">本课讲解尚未整理，生字表由「本册写字表」自动分配，供预习参考。</div>' : ''}
-    <div class="char-grid">${cards}</div>`;
-
+function bindCharCards() {
   $$('#charContent .char-card').forEach(c => {
     c.addEventListener('click', () => openStroke(c.dataset.char));
   });
+}
+
+/** 渲染三个标签页并绑定事件 */
+function renderCharTabs() {
+  $('#charTabs').innerHTML = `
+    <div class="tab ${state.charTab === 'one' ? 'active' : ''}" data-tab="one">一类字（会写）</div>
+    <div class="tab ${state.charTab === 'two' ? 'active' : ''}" data-tab="two">二类字（会认）</div>
+    <div class="tab ${state.charTab === 'words' ? 'active' : ''}" data-tab="words">词语积累</div>`;
+  $$('#charTabs .tab').forEach(t => t.addEventListener('click', () => {
+    state.charTab = t.dataset.tab;
+    renderCharsPage();
+  }));
 }
 
 function renderWords(L) {
@@ -466,7 +498,16 @@ function renderWords(L) {
 // 五、笔顺动画弹层
 // ==================================================================
 async function openStroke(ch) {
-  const strokeMap = await ensureCharInfo();
+  // 笔顺分片可能尚未就绪（首次点击时后台仍在加载）
+  if (!state.charInfoMap[state.book?.key]) {
+    toast('正在加载本册笔顺数据…');
+  }
+  let strokeMap;
+  try {
+    strokeMap = await ensureCharInfo();
+  } catch (e) {
+    strokeMap = state.charInfoMap[state.book?.key] || {};
+  }
   const info = strokeMap[ch] || state.metaMap[ch];
 
   if (!info) { toast('暂无「' + ch + '」的字形数据'); return; }
@@ -479,7 +520,7 @@ async function openStroke(ch) {
       info.st = d.strokes; info.md = d.medians; info.rs = d.radStrokes;
       info.n = d.strokes.length;
     } catch (e) {
-      toast('本字笔顺数据未内置，请在联网环境下重试');
+      toast('本字笔顺数据暂不可用，请联网后重试');
       return;
     }
   }

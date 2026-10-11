@@ -354,3 +354,7 @@ body { padding-bottom: 40px; }
   font-size: 12.5px;
   line-height: 1.6;
 }
+
+/* 笔顺数据尚未加载完成的字卡 */
+.char-card.no-anim { opacity: .55; }
+.char-card.no-anim .cc-play { opacity: .3; }
