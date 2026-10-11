@@ -358,3 +358,28 @@ body { padding-bottom: 40px; }
 /* 笔顺数据尚未加载完成的字卡 */
 .char-card.no-anim { opacity: .55; }
 .char-card.no-anim .cc-play { opacity: .3; }
+
+/* ===== 设置页：版本说明与可用性提示 ===== */
+.field-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-sub, #8a8f99);
+  line-height: 1.5;
+  min-height: 1em;
+}
+
+.setup-warn {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #fff7e6;
+  border-left: 3px solid #f0a020;
+  color: #8a6100;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.chip.disabled {
+  opacity: .45;
+  pointer-events: none;
+}

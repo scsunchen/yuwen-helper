@@ -5,20 +5,24 @@
 
 // 相对路径：兼容 https://<user>.github.io/<repo>/ 这类子路径部署
 const DATA = './data/';
-const LS_KEY = 'yw_prep_setup_v1';
+const LS_KEY = 'yw_prep_setup_v2';
 
 // ---------- 全局状态 ----------
 const state = {
-  setup: { textbook: '人教部编版', grade: 1, term: '上册' },
-  manifest: null,
-  book: null,          // 当前册次
-  lesson: null,        // 当前课文
+  // 选中项：textbook 存「版本 id」（如 rjb），与展示名解耦
+  setup: { textbookId: null, grade: 1, term: '上册' },
+  catalog: null,       // 版本清单（data/textbook/textbooks.json）
+  versionBook: null,   // 当前版本的册次清单（按需加载）
+  book: null,          // 当前册次的目录索引（按需加载）
+  lesson: null,        // 当前课文正文
   charTab: 'one',
   writer: null,        // HanziWriter 实例
   loopTimer: null,
   speed: 5,
-  charInfoMap: {},     // 字 -> 字形信息（含笔画）
+  charInfoMap: {},     // 册 key -> 字形信息（含笔画）
   metaMap: {},         // 字 -> 轻量信息（拼音/部首/结构/笔画数）
+  versionCache: {},    // 版本 id -> 版本索引（避免重复请求）
+  bookCache: {},       // "版本id/册key" -> 册索引（避免重复请求）
 };
 
 const $ = (s) => document.querySelector(s);
@@ -75,16 +79,36 @@ function goBack() {
 // ==================================================================
 // 一、设置页
 // ==================================================================
-function renderSetup() {
-  // 教材版本
-  const textbooks = state.manifest?.textbooks || ['人教部编版'];
-  $('#textbookChips').innerHTML = textbooks.map(t =>
-    `<div class="chip ${t === state.setup.textbook ? 'active' : ''}" data-textbook="${esc(t)}">${esc(t)}</div>`
-  ).join('');
+function currentVersion() {
+  return (state.catalog?.textbooks || []).find(t => t.id === state.setup.textbookId) || null;
+}
 
-  // 年级
-  const grades = [...new Set((state.manifest?.books || []).map(b => b.grade))].sort((a, b) => a - b);
+function renderSetup() {
+  const list = state.catalog?.textbooks || [];
+
+  // 教材版本
+  if (!list.length) {
+    $('#textbookChips').innerHTML = '<div class="chip disabled">暂无可用版本</div>';
+  } else {
+    $('#textbookChips').innerHTML = list.map(t => {
+      const act = t.id === state.setup.textbookId;
+      return `<div class="chip ${act ? 'active' : ''}" data-textbook="${esc(t.id)}" title="${esc(t.alias || t.name)}">${esc(t.name)}</div>`;
+    }).join('');
+  }
+
+  // 版本说明：别名 / 备注
+  const ver = currentVersion();
+  const noteEl = $('#textbookNote');
+  if (noteEl) {
+    noteEl.textContent = ver
+      ? [ver.alias, ver.note].filter(Boolean).join(' · ')
+      : '请选择教材版本';
+  }
+
+  // 年级：以当前版本实际提供的年级为准
+  const grades = (ver?.grades || []).slice().sort((a, b) => a - b);
   const gradeList = grades.length ? grades : [1, 2, 3, 4, 5, 6];
+  if (!gradeList.includes(state.setup.grade)) state.setup.grade = gradeList[0];
   $('#gradeChips').innerHTML = gradeList.map(g =>
     `<div class="chip ${g === state.setup.grade ? 'active' : ''}" data-grade="${g}">${g}年级</div>`
   ).join('');
@@ -93,12 +117,35 @@ function renderSetup() {
   $('#termChips').innerHTML = ['上册', '下册'].map(t =>
     `<div class="chip ${t === state.setup.term ? 'active' : ''}" data-term="${t}">${t}</div>`
   ).join('');
+
+  // 可用性提示（册次清单来自已加载的版本索引）
+  const warn = $('#setupWarn');
+  if (warn) {
+    const key = `${state.setup.grade}-${state.setup.term === '上册' ? 1 : 2}`;
+    const books = state.versionBook?.books || [];
+    const has = books.some(b => b.key === key);
+    // 版本索引尚未加载完时不做判断，避免误报
+    warn.hidden = has || !ver || !state.versionBook;
+    if (!has && ver && state.versionBook) {
+      warn.textContent = `${ver.name} 的 ${state.setup.grade}年级${state.setup.term} 数据尚未收录`;
+    }
+  }
+}
+
+/** 选中版本变化时，按需拉取该版本的册次清单并刷新设置页 */
+async function onVersionPicked(id) {
+  state.setup.textbookId = id;
+  state.versionBook = null;
+  renderSetup();
+  state.versionBook = await loadVersionIndex(id);
+  renderSetup();
 }
 
 function bindSetupEvents() {
   $('#textbookChips').addEventListener('click', e => {
     const el = e.target.closest('[data-textbook]'); if (!el) return;
-    state.setup.textbook = el.dataset.textbook; renderSetup();
+    if (el.dataset.textbook === state.setup.textbookId) return;
+    onVersionPicked(el.dataset.textbook);
   });
   $('#gradeChips').addEventListener('click', e => {
     const el = e.target.closest('[data-grade]'); if (!el) return;
@@ -110,17 +157,72 @@ function bindSetupEvents() {
   });
   $('#saveSetup').addEventListener('click', async () => {
     localStorage.setItem(LS_KEY, JSON.stringify(state.setup));
-    await loadBook();
     showPage('home');
+    $('#currentBook').innerHTML = '<div class="loading">正在加载教材数据…</div>';
+    $('#catalogList').innerHTML = '';
+    await loadBook();
   });
+}
+
+// ==================================================================
+// 一·B、数据加载（按需）
+// ==================================================================
+
+/** 拉取版本清单（应用启动时一次） */
+async function loadCatalog() {
+  if (state.catalog) return state.catalog;
+  const path = `${DATA}textbook/textbooks.json`;
+  const asJson = async (p) => {
+    const r = await fetch(p);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  };
+  state.catalog = await asJson(path);
+  if (!state.setup.textbookId) {
+    state.setup.textbookId = state.catalog.default || state.catalog.textbooks?.[0]?.id || null;
+  }
+  return state.catalog;
+}
+
+/** 按需加载当前版本的册次清单 */
+async function loadVersionIndex(id) {
+  if (!id) return null;
+  if (state.versionCache[id]) return state.versionCache[id];
+  try {
+    const v = await getJSON(`${DATA}textbook/${id}/index.json`);
+    state.versionCache[id] = v;
+    return v;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** 按需加载某一册的目录索引 */
+async function loadBookIndex(versionId, key) {
+  const cacheKey = `${versionId}/${key}`;
+  if (state.bookCache[cacheKey]) return state.bookCache[cacheKey];
+  const dir = `${state.setup.grade}年级${state.setup.term}`;
+  try {
+    const b = await getJSON(`${DATA}textbook/${versionId}/${encodeURIComponent(dir)}/index.json`);
+    state.bookCache[cacheKey] = b;
+    return b;
+  } catch (e) {
+    return null;
+  }
 }
 
 // ==================================================================
 // 二、首页 / 课文检索
 // ==================================================================
 async function loadBook() {
+  const vid = state.setup.textbookId;
+  if (!vid) { toast('尚未选择教材版本'); return; }
+
+  // 先确保版本索引已就绪（用于年级列表 / 可用性判断）
+  state.versionBook = await loadVersionIndex(vid);
+
   const key = `${state.setup.grade}-${state.setup.term === '上册' ? 1 : 2}`;
-  state.book = state.manifest.books.find(b => b.key === key) || null;
+  state.book = await loadBookIndex(vid, key);
   renderCurrentBook();
   renderCatalog();
 }
@@ -128,9 +230,11 @@ async function loadBook() {
 function renderCurrentBook() {
   const b = state.book;
   const el = $('#currentBook');
+  const ver = currentVersion();
+  const vname = ver?.name || '教材';
   if (!b) {
-    el.innerHTML = `<span class="book-name">${esc(state.setup.textbook)} ${state.setup.grade}年级${state.setup.term}</span>
-                    <span class="book-sub">暂无数据</span>`;
+    el.innerHTML = `<span class="book-name">${esc(vname)} ${state.setup.grade}年级${state.setup.term}</span>
+                    <span class="book-sub">该册数据暂未收录</span>`;
     return;
   }
   const full = b.lessons.filter(l => !l.stub).length;
@@ -199,48 +303,83 @@ function bindHomeEvents() {
 }
 
 async function doSearch(kw) {
-  // 跨全部册次搜索
-  const hits = [];
-  state.manifest.books.forEach(b => {
-    b.lessons.forEach(l => {
-      if (l.title.includes(kw)) hits.push({ ...l, book: b });
-    });
-  });
   const box = $('#searchResults');
   $('#catalogView').hidden = true;
   box.hidden = false;
-  if (!hits.length) {
-    box.innerHTML = `<div class="loading">没有找到「${esc(kw)}」相关的课文</div>`;
-    return;
+
+  // 先搜当前册（已加载）
+  const hits = [];
+  const seen = new Set();
+  const collect = (b) => {
+    if (!b) return;
+    b.lessons.forEach(l => {
+      if (l.title.includes(kw) && !seen.has(l.id)) {
+        seen.add(l.id);
+        hits.push({ ...l, book: b });
+      }
+    });
+  };
+  collect(state.book);
+
+  const render = (loading) => {
+    if (!hits.length) {
+      box.innerHTML = loading
+        ? `<div class="loading">正在搜索全部册次…</div>`
+        : `<div class="loading">没有找到「${esc(kw)}」相关的课文</div>`;
+      return;
+    }
+    hits.sort((a, b) => (a.stub ? 1 : 0) - (b.stub ? 1 : 0));
+    box.innerHTML = `<div class="section-label">找到 ${hits.length} 篇相关课文${loading ? '（搜索中…）' : ''}</div>` +
+      hits.slice(0, 60).map(h => {
+        let title = esc(h.title);
+        const re = new RegExp('(' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+        title = title.replace(re, '<mark>$1</mark>');
+        return `<div class="lesson-item ${h.stub ? '' : 'has-content'}"
+          data-id="${esc(h.id)}" data-book="${h.book.key}">
+          <div class="li-title">${title}</div>
+          <div class="li-unit">${h.book.grade}年级${h.book.term}</div>
+          <div class="li-badge ${h.stub ? 'badge-stub' : 'badge-full'}">${h.stub ? '待补充' : '有讲解'}</div>
+        </div>`;
+      }).join('');
+  };
+
+  render(false);
+
+  // 再懒加载同版本其余册次，边搜边补
+  const vid = state.setup.textbookId;
+  const books = state.versionBook?.books || [];
+  const others = books.filter(b => !state.bookCache[`${vid}/${b.key}`]);
+
+  for (const b of others) {
+    // 用户可能已改关键词，放弃本次
+    if ($('#searchInput').value.trim() !== kw) return;
+    // 临时切到目标册以复用 loadBookIndex 的目录解析
+    const keep = { grade: state.setup.grade, term: state.setup.term };
+    state.setup.grade = b.grade;
+    state.setup.term = b.term;
+    const idx = await loadBookIndex(vid, b.key);
+    state.setup.grade = keep.grade;
+    state.setup.term = keep.term;
+    if (idx) collect(idx);
+    render(true);
   }
-  // 完整讲解的排前面
-  hits.sort((a, b) => (a.stub ? 1 : 0) - (b.stub ? 1 : 0));
-  box.innerHTML = `<div class="section-label">找到 ${hits.length} 篇相关课文</div>` +
-    hits.slice(0, 60).map(h => {
-      let title = esc(h.title);
-      const re = new RegExp('(' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-      title = title.replace(re, '<mark>$1</mark>');
-      return `<div class="lesson-item ${h.stub ? '' : 'has-content'}"
-        data-id="${esc(h.id)}" data-book="${h.book.key}">
-        <div class="li-title">${title}</div>
-        <div class="li-unit">${h.book.grade}年级${h.book.term}</div>
-        <div class="li-badge ${h.stub ? 'badge-stub' : 'badge-full'}">${h.stub ? '待补充' : '有讲解'}</div>
-      </div>`;
-    }).join('');
+  render(false);
 }
 
 // ==================================================================
 // 三、课程讲解页
 // ==================================================================
 async function openLesson(id, bookKey) {
-  // 若来自全局搜索且册次不同，先切换册次
-  if (bookKey) {
-    const target = state.manifest.books.find(b => b.key === bookKey);
-    if (target && (!state.book || state.book.key !== bookKey)) {
+  // 若来自跨册搜索且册次不同，先切到目标册
+  if (bookKey && (!state.book || state.book.key !== bookKey)) {
+    const target = (state.versionBook?.books || []).find(b => b.key === bookKey);
+    if (target) {
       state.setup.grade = target.grade;
       state.setup.term = target.term;
       localStorage.setItem(LS_KEY, JSON.stringify(state.setup));
-      await loadBook();
+      state.book = await loadBookIndex(state.setup.textbookId, bookKey);
+      renderCurrentBook();
+      renderCatalog();
     }
   }
   const b = state.book;
@@ -251,11 +390,14 @@ async function openLesson(id, bookKey) {
   showPage('lesson');
   $('#pageTitle').textContent = meta.title;
   $('#lessonBody').innerHTML = '<div class="loading">加载中</div>';
-  // 先按 manifest 粗略判断，加载完课文数据后再精确判断
   $('#goCharsBtn').hidden = true;
 
   try {
-    const lesson = await getJSON(`${DATA}textbook/${encodeURIComponent('人教部编版')}/${encodeURIComponent(b.dir)}/${id}.json`);
+    // 路径完全由「版本 id + 册次目录」决定，不含任何硬编码版本名
+    const vid = state.setup.textbookId;
+    const lesson = await getJSON(
+      `${DATA}textbook/${encodeURIComponent(vid)}/${encodeURIComponent(b.dir)}/${encodeURIComponent(id)}.json`
+    );
     state.lesson = lesson;
     renderLesson(lesson);
   } catch (err) {
@@ -379,12 +521,13 @@ function bindCharsEvents() {
 }
 
 async function ensureCharInfo(chars) {
-  // 按册加载笔顺分片
+  // 按册加载笔顺分片（key 含版本，避免多版本间串数据）
   if (!state.book) return {};
-  const key = state.book.key;
+  const vid = state.setup.textbookId || 'default';
+  const key = `${vid}/${state.book.key}`;
   if (!state.charInfoMap[key]) {
     try {
-      state.charInfoMap[key] = await getJSON(`${DATA}hanzi/strokes/g${key}.json`);
+      state.charInfoMap[key] = await getJSON(`${DATA}hanzi/strokes/g${state.book.key}.json`);
     } catch (e) {
       state.charInfoMap[key] = {};
     }
@@ -394,6 +537,12 @@ async function ensureCharInfo(chars) {
     try { state.metaMap = await getJSON(`${DATA}hanzi/meta.json`); } catch (e) { state.metaMap = {}; }
   }
   return state.charInfoMap[key] || {};
+}
+
+/** 当前册已加载的笔顺映射 */
+function currentStrokeMap() {
+  const vid = state.setup.textbookId || 'default';
+  return state.charInfoMap[`${vid}/${state.book?.key}`] || {};
 }
 
 async function renderCharsPage() {
@@ -415,7 +564,7 @@ async function renderCharsPage() {
 
   // 先用已缓存的 meta 立即出卡片（含拼音/部首/结构/笔画数），
   // 笔顺分片在后台加载，加载完再补全“是否可播放”的标记。
-  const ready = !!state.charInfoMap[state.book?.key];
+  const ready = Object.keys(currentStrokeMap()).length > 0;
   $('#charContent').innerHTML = `
     <div class="section-label">点击汉字查看拼音、笔画数、笔顺动画</div>
     ${L.charsAuto ? '<div class="auto-note">本课讲解尚未整理，生字表由「本册写字表」自动分配，供预习参考。</div>' : ''}
@@ -445,7 +594,7 @@ async function renderCharsPage() {
 
 /** 渲染生字卡片 HTML */
 function renderCharCards(chars) {
-  const strokeMap = state.charInfoMap[state.book?.key] || {};
+  const strokeMap = currentStrokeMap();
   return chars.map(ch => {
     const info = strokeMap[ch] || state.metaMap[ch] || {};
     const py = (info.p || []).length ? info.p[0] : '';
@@ -499,14 +648,14 @@ function renderWords(L) {
 // ==================================================================
 async function openStroke(ch) {
   // 笔顺分片可能尚未就绪（首次点击时后台仍在加载）
-  if (!state.charInfoMap[state.book?.key]) {
+  if (!Object.keys(currentStrokeMap()).length) {
     toast('正在加载本册笔顺数据…');
   }
   let strokeMap;
   try {
     strokeMap = await ensureCharInfo();
   } catch (e) {
-    strokeMap = state.charInfoMap[state.book?.key] || {};
+    strokeMap = currentStrokeMap();
   }
   const info = strokeMap[ch] || state.metaMap[ch];
 
@@ -694,19 +843,38 @@ function closeStrokeModal() {
 // 启动
 // ==================================================================
 async function main() {
+  // 1. 拉取版本清单（唯一必须的应用级数据）
   try {
-    state.manifest = await getJSON(`${DATA}textbook/manifest.json`);
+    await loadCatalog();
   } catch (e) {
     document.body.innerHTML = '<div style="padding:40px;text-align:center;color:#666">数据加载失败：' +
       '请确保通过本地服务器打开本页面（例如 python3 -m http.server），<br>直接双击打开文件可能因浏览器安全限制无法读取数据。</div>';
     return;
   }
 
-  // 读取本地设置
+  // 2. 读取本地设置（含从 v1 迁移）
   try {
     const saved = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
-    if (saved && saved.grade) state.setup = { ...state.setup, ...saved };
+    if (saved) {
+      if (saved.textbookId) {
+        state.setup = { ...state.setup, ...saved };
+      } else if (saved.textbook) {
+        // 旧版按版本「名称」保存，迁到新版的版本 id
+        const hit = (state.catalog.textbooks || []).find(t => t.name === saved.textbook);
+        state.setup = {
+          textbookId: hit?.id || state.setup.textbookId,
+          grade: saved.grade || state.setup.grade,
+          term: saved.term || state.setup.term,
+        };
+      }
+    }
   } catch (e) {}
+
+  // 3. 兜底：确保选中版本有效
+  const ids = (state.catalog.textbooks || []).map(t => t.id);
+  if (!state.setup.textbookId || !ids.includes(state.setup.textbookId)) {
+    state.setup.textbookId = state.catalog.default || ids[0] || null;
+  }
 
   renderSetup();
   bindSetupEvents();
@@ -715,16 +883,27 @@ async function main() {
   bindStrokeModal();
 
   $('#backBtn').addEventListener('click', goBack);
-  $('#setupBtn').addEventListener('click', () => { renderSetup(); showPage('setup'); });
-
-  await loadBook();
-
-  // 首次使用（无本地设置）进入设置页
-  if (!localStorage.getItem(LS_KEY)) {
+  $('#setupBtn').addEventListener('click', async () => {
+    // 确保版本索引就绪，才能正确显示年级与可用性
+    if (!state.versionBook && state.setup.textbookId) {
+      state.versionBook = await loadVersionIndex(state.setup.textbookId);
+    }
+    renderSetup();
     showPage('setup');
-  } else {
-    showPage('home');
+  });
+
+  // 4. 首次使用：进入设置页（先加载版本索引，但不加载任何册次数据）
+  if (!localStorage.getItem(LS_KEY)) {
+    state.versionBook = await loadVersionIndex(state.setup.textbookId);
+    renderSetup();
+    showPage('setup');
+    return;
   }
+
+  // 5. 已有设置：按需加载所选版本的那一册
+  showPage('home');
+  $('#currentBook').innerHTML = '<div class="loading">正在加载教材数据…</div>';
+  await loadBook();
 }
 
 main();

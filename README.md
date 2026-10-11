@@ -54,14 +54,34 @@ web-pages/
 ├── sw.js                   Service Worker（离线缓存）
 ├── manifest.webmanifest    PWA 清单（可添加到主屏幕）
 ├── 404.html                路由兜底页
+├── ADD_VERSION.md          「如何新增一个教材版本」开发文档
 ├── lib/
 │   └── hanzi-writer.min.js 笔顺动画库 v3.5
 └── data/
-    ├── textbook/           323 篇课文数据（按册分目录）
+    ├── textbook/
+    │   ├── textbooks.json  ★ 版本清单（新增版本在这里注册）
+    │   └── rjb/            人教部编版
+    │       ├── index.json      该版本的册次清单
+    │       └── 1年级上册/
+    │           ├── index.json  该册课文目录（按需加载）
+    │           └── rjb-1s-01.json
     └── hanzi/
         ├── meta.json       2139 字元信息（拼音/部首/结构/笔画数）
         └── strokes/        12 册笔顺数据（每册一个 JSON，按需加载）
 ```
+
+## 多版本架构
+
+教材版本是**数据驱动**的，新增版本**不需要改任何前端代码**：
+
+1. 数据按版本分目录：`data/textbook/{版本id}/{年级}年级{册次}/`
+2. 版本清单 `textbooks.json` 描述有哪些版本可用
+3. 用户选定版本 + 年级 + 册次后，**只加载那一册的索引**（约 4KB）
+4. 进入生字页时再按需加载该册笔顺数据（150KB~800KB）
+
+加载实测：首次打开仅拉版本清单；选定 3 年级上册后**只发 1 个册次请求**；跨册搜索时懒加载其余册次。
+
+> 要新增版本（苏教版、北师大版等），详见 [ADD_VERSION.md](ADD_VERSION.md)。
 
 ## 技术要点
 

@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "default": "rjb",
+  "textbooks": [
+    {
+      "id": "rjb",
+      "name": "人教部编版",
+      "alias": "人教版 / 部编版 / 统编版",
+      "note": "全国使用最广的版本（统编教材）",
+      "grades": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "bookCount": 12,
+      "lessonCount": 323
+    }
+  ]
+}

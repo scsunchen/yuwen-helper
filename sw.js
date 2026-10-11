@@ -6,11 +6,11 @@
  *   - 首次访问后，全部已加载资源均可离线使用
  * ================================================================== */
 
-const VERSION = 'v1.0.0';
+const VERSION = 'v2.0.0';
 const STATIC_CACHE = `yw-static-${VERSION}`;
 const DATA_CACHE = `yw-data-${VERSION}`;
 
-// 安装时预缓存应用骨架
+// 安装时预缓存应用骨架 + 版本清单（体积很小）
 const PRECACHE = [
   './',
   './index.html',
@@ -18,7 +18,7 @@ const PRECACHE = [
   './app.js',
   './lib/hanzi-writer.min.js',
   './manifest.webmanifest',
-  './data/textbook/manifest.json',
+  './data/textbook/textbooks.json',
 ];
 
 self.addEventListener('install', (e) => {
