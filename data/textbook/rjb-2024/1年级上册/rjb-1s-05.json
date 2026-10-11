@@ -1,0 +1,44 @@
+{
+  "id": "rjb-1s-05",
+  "title": "天地人",
+  "textbook": "人教部编版",
+  "grade": 1,
+  "term": "上册",
+  "unit": "第一单元 · 识字",
+  "lessonType": "识字",
+  "skim": false,
+  "author": "",
+  "text": [],
+  "summary": "",
+  "centerThought": "",
+  "segments": [],
+  "sentences": [],
+  "skills": [],
+  "classOne": [
+    "一",
+    "二",
+    "三"
+  ],
+  "classTwo": [
+    "天",
+    "地",
+    "人",
+    "你",
+    "我",
+    "他"
+  ],
+  "wordsOne": [
+    "一个",
+    "第二",
+    "三年"
+  ],
+  "wordsTwo": [
+    "天安门",
+    "地方",
+    "人民",
+    "你们"
+  ],
+  "homework": [],
+  "stub": true,
+  "charsAuto": true
+}

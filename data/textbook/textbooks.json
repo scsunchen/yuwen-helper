@@ -1,12 +1,15 @@
 {
-  "version": 2,
-  "default": "rjb",
+  "version": 3,
+  "default": null,
   "textbooks": [
     {
-      "id": "rjb",
-      "name": "人教部编版",
+      "id": "rjb-2024",
+      "publisher": "人教部编版",
+      "edition": "2024年版",
+      "year": 2024,
+      "name": "人教部编版 2024年版",
       "alias": "人教版 / 部编版 / 统编版",
-      "note": "全国使用最广的版本（统编教材）",
+      "note": "现行统编教材，全国使用最广",
       "grades": [
         1,
         2,
@@ -16,7 +19,8 @@
         6
       ],
       "bookCount": 12,
-      "lessonCount": 323
+      "lessonCount": 334,
+      "current": true
     }
   ]
 }

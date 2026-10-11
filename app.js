@@ -86,13 +86,15 @@ function currentVersion() {
 function renderSetup() {
   const list = state.catalog?.textbooks || [];
 
-  // 教材版本
+  // 教材版本：按「出版社 + 年份」并列展示
   if (!list.length) {
     $('#textbookChips').innerHTML = '<div class="chip disabled">暂无可用版本</div>';
   } else {
     $('#textbookChips').innerHTML = list.map(t => {
       const act = t.id === state.setup.textbookId;
-      return `<div class="chip ${act ? 'active' : ''}" data-textbook="${esc(t.id)}" title="${esc(t.alias || t.name)}">${esc(t.name)}</div>`;
+      // 名称已含年份，如「人教部编版 2024年版」
+      const sub = t.year && !String(t.name).includes(String(t.year)) ? ` ${t.year}年版` : '';
+      return `<div class="chip ${act ? 'active' : ''}" data-textbook="${esc(t.id)}" title="${esc(t.alias || t.name)}">${esc(t.name)}${sub}</div>`;
     }).join('');
   }
 
@@ -100,23 +102,37 @@ function renderSetup() {
   const ver = currentVersion();
   const noteEl = $('#textbookNote');
   if (noteEl) {
-    noteEl.textContent = ver
-      ? [ver.alias, ver.note].filter(Boolean).join(' · ')
-      : '请选择教材版本';
+    if (!ver) {
+      noteEl.textContent = list.length ? '请选择教材版本与年份' : '暂无可用教材版本';
+    } else {
+      noteEl.textContent = [ver.publisher, ver.edition, ver.alias, ver.note]
+        .filter(Boolean).join(' · ');
+    }
   }
 
-  // 年级：以当前版本实际提供的年级为准
-  const grades = (ver?.grades || []).slice().sort((a, b) => a - b);
-  const gradeList = grades.length ? grades : [1, 2, 3, 4, 5, 6];
-  if (!gradeList.includes(state.setup.grade)) state.setup.grade = gradeList[0];
-  $('#gradeChips').innerHTML = gradeList.map(g =>
-    `<div class="chip ${g === state.setup.grade ? 'active' : ''}" data-grade="${g}">${g}年级</div>`
-  ).join('');
+  // 未选版本时，年级与册次不渲染，并提示
+  const noVersion = !ver;
+  $('#gradeChips').innerHTML = noVersion
+    ? '<div class="chip disabled">请先选择教材版本</div>'
+    : '';
+  $('#termChips').innerHTML = noVersion
+    ? '<div class="chip disabled">请先选择教材版本</div>'
+    : '';
 
-  // 册次
-  $('#termChips').innerHTML = ['上册', '下册'].map(t =>
-    `<div class="chip ${t === state.setup.term ? 'active' : ''}" data-term="${t}">${t}</div>`
-  ).join('');
+  if (!noVersion) {
+    // 年级：以当前版本实际提供的年级为准
+    const grades = (ver?.grades || []).slice().sort((a, b) => a - b);
+    const gradeList = grades.length ? grades : [1, 2, 3, 4, 5, 6];
+    if (!gradeList.includes(state.setup.grade)) state.setup.grade = gradeList[0];
+    $('#gradeChips').innerHTML = gradeList.map(g =>
+      `<div class="chip ${g === state.setup.grade ? 'active' : ''}" data-grade="${g}">${g}年级</div>`
+    ).join('');
+
+    // 册次
+    $('#termChips').innerHTML = ['上册', '下册'].map(t =>
+      `<div class="chip ${t === state.setup.term ? 'active' : ''}" data-term="${t}">${t}</div>`
+    ).join('');
+  }
 
   // 可用性提示（册次清单来自已加载的版本索引）
   const warn = $('#setupWarn');
@@ -125,10 +141,17 @@ function renderSetup() {
     const books = state.versionBook?.books || [];
     const has = books.some(b => b.key === key);
     // 版本索引尚未加载完时不做判断，避免误报
-    warn.hidden = has || !ver || !state.versionBook;
+    warn.hidden = has || noVersion || !state.versionBook;
     if (!has && ver && state.versionBook) {
       warn.textContent = `${ver.name} 的 ${state.setup.grade}年级${state.setup.term} 数据尚未收录`;
     }
+  }
+
+  // 「开始预习」：未选版本时不可点
+  const btn = $('#saveSetup');
+  if (btn) {
+    btn.disabled = noVersion;
+    btn.textContent = noVersion ? '请先选择教材版本' : '开始预习';
   }
 }
 
@@ -178,9 +201,8 @@ async function loadCatalog() {
     return r.json();
   };
   state.catalog = await asJson(path);
-  if (!state.setup.textbookId) {
-    state.setup.textbookId = state.catalog.default || state.catalog.textbooks?.[0]?.id || null;
-  }
+  // 不做「自动选中第一个版本」的兜底：出版社与年份必须由用户主动确认
+  // （版本失效时同理，会在 main() 中被置空并跳转设置页）
   return state.catalog;
 }
 
@@ -197,13 +219,14 @@ async function loadVersionIndex(id) {
   }
 }
 
-/** 按需加载某一册的目录索引 */
-async function loadBookIndex(versionId, key) {
+/** 按需加载某一册的目录索引（dir 由调用方显式给出，避免依赖全局状态） */
+async function loadBookIndex(versionId, key, dir) {
+  if (!versionId) return null;
   const cacheKey = `${versionId}/${key}`;
   if (state.bookCache[cacheKey]) return state.bookCache[cacheKey];
-  const dir = `${state.setup.grade}年级${state.setup.term}`;
+  const useDir = dir || `${state.setup.grade}年级${state.setup.term}`;
   try {
-    const b = await getJSON(`${DATA}textbook/${versionId}/${encodeURIComponent(dir)}/index.json`);
+    const b = await getJSON(`${DATA}textbook/${versionId}/${encodeURIComponent(useDir)}/index.json`);
     state.bookCache[cacheKey] = b;
     return b;
   } catch (e) {
@@ -222,7 +245,7 @@ async function loadBook() {
   state.versionBook = await loadVersionIndex(vid);
 
   const key = `${state.setup.grade}-${state.setup.term === '上册' ? 1 : 2}`;
-  state.book = await loadBookIndex(vid, key);
+  state.book = await loadBookIndex(vid, key, `${state.setup.grade}年级${state.setup.term}`);
   renderCurrentBook();
   renderCatalog();
 }
@@ -357,7 +380,7 @@ async function doSearch(kw) {
     const keep = { grade: state.setup.grade, term: state.setup.term };
     state.setup.grade = b.grade;
     state.setup.term = b.term;
-    const idx = await loadBookIndex(vid, b.key);
+    const idx = await loadBookIndex(vid, b.key, b.dir);
     state.setup.grade = keep.grade;
     state.setup.term = keep.term;
     if (idx) collect(idx);
@@ -377,7 +400,7 @@ async function openLesson(id, bookKey) {
       state.setup.grade = target.grade;
       state.setup.term = target.term;
       localStorage.setItem(LS_KEY, JSON.stringify(state.setup));
-      state.book = await loadBookIndex(state.setup.textbookId, bookKey);
+      state.book = await loadBookIndex(state.setup.textbookId, bookKey, target.dir);
       renderCurrentBook();
       renderCatalog();
     }
@@ -870,10 +893,11 @@ async function main() {
     }
   } catch (e) {}
 
-  // 3. 兜底：确保选中版本有效
+  // 3. 校验已保存的版本是否仍有效（版本可能已下架）
+  //    注意：不做「自动选中第一个版本」的兜底——年份必须由用户主动确认
   const ids = (state.catalog.textbooks || []).map(t => t.id);
-  if (!state.setup.textbookId || !ids.includes(state.setup.textbookId)) {
-    state.setup.textbookId = state.catalog.default || ids[0] || null;
+  if (state.setup.textbookId && !ids.includes(state.setup.textbookId)) {
+    state.setup.textbookId = null;
   }
 
   renderSetup();
@@ -892,15 +916,17 @@ async function main() {
     showPage('setup');
   });
 
-  // 4. 首次使用：进入设置页（先加载版本索引，但不加载任何册次数据）
-  if (!localStorage.getItem(LS_KEY)) {
+  // 4. 未选版本（首次使用，或所存版本已失效）：进入设置页让用户主动选择
+  //    此时只加载版本索引（约 4KB），不加载任何册次数据
+  if (!state.setup.textbookId) {
     state.versionBook = await loadVersionIndex(state.setup.textbookId);
     renderSetup();
     showPage('setup');
     return;
   }
 
-  // 5. 已有设置：按需加载所选版本的那一册
+  // 5. 已有有效设置：按需加载所选版本的那一册
+  state.versionBook = await loadVersionIndex(state.setup.textbookId);
   showPage('home');
   $('#currentBook').innerHTML = '<div class="loading">正在加载教材数据…</div>';
   await loadBook();

@@ -1,0 +1,51 @@
+{
+  "id": "rjb-1s-29",
+  "title": "小书包",
+  "textbook": "人教部编版",
+  "grade": 1,
+  "term": "上册",
+  "unit": "第六单元 · 识字",
+  "lessonType": "识字",
+  "skim": false,
+  "author": "",
+  "text": [],
+  "summary": "",
+  "centerThought": "",
+  "segments": [],
+  "sentences": [],
+  "skills": [],
+  "classOne": [
+    "书",
+    "刀",
+    "尺",
+    "本",
+    "早"
+  ],
+  "classTwo": [
+    "书",
+    "包",
+    "尺",
+    "作",
+    "业",
+    "本",
+    "笔",
+    "刀",
+    "课",
+    "早"
+  ],
+  "wordsOne": [
+    "书记",
+    "一刀",
+    "尺寸",
+    "日本"
+  ],
+  "wordsTwo": [
+    "书记",
+    "包括",
+    "尺寸",
+    "工作"
+  ],
+  "homework": [],
+  "stub": true,
+  "charsAuto": true
+}
