@@ -141,46 +141,111 @@ function toggleStar(ch) {
 }
 
 // ==================================================================
-// 朗读（Web Speech API，零依赖；不支持时自动隐藏按钮）
+// 朗读：系统语音(Web Speech API)优先 → 在线音频兜底
+//   原因：国产浏览器 / 部分安卓机没装中文语音包，
+//        speechSynthesis 会以 synthesis-failed 静默失败（无声音）。
 // ==================================================================
 const SPEECH_OK = typeof window !== 'undefined'
   && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
 
+// 在线 TTS（百度翻译发音接口，支持长文本；无需 key）
+const TTS_BASE = 'https://fanyi.baidu.com/gettts';
+function ttsUrl(text, rate) {
+  // rate 0.6~0.9 → spd 2~4（百度 spd 取值 1~5，越大越快）
+  const spd = Math.max(1, Math.min(5, Math.round((rate || 0.85) * 5)));
+  return `${TTS_BASE}?lan=zh&text=${encodeURIComponent(text)}&spd=${spd}&source=web`;
+}
+
 let _voice = null;
+let _voiceReady = false;      // 是否已探测到可用中文语音
+let _audio = null;            // 在线兜底播放器
+let _fallToken = 0;           // 兜底去重令牌
+
 function pickVoice() {
   if (!SPEECH_OK) return null;
   const vs = speechSynthesis.getVoices() || [];
-  // 优先中文语音（zh-CN > zh 开头）
   return vs.find(v => /zh[-_]CN/i.test(v.lang))
       || vs.find(v => /^zh/i.test(v.lang))
       || null;
 }
 if (SPEECH_OK) {
   _voice = pickVoice();
-  // 语音列表在部分浏览器异步就绪，就绪后重新挑一次
-  speechSynthesis.addEventListener?.('voiceschanged', () => { _voice = pickVoice(); });
+  _voiceReady = !!_voice;
+  // 语音列表异步就绪，就绪后重新挑一次
+  const refresh = () => {
+    _voice = pickVoice();
+    if (_voice) _voiceReady = true;
+  };
+  speechSynthesis.addEventListener?.('voiceschanged', refresh);
+  setTimeout(refresh, 300);
 }
 
-/** 朗读文本；rate 默认稍慢，方便跟读 */
-function speak(text, rate) {
-  if (!SPEECH_OK) { toast('当前浏览器不支持朗读'); return; }
-  const t = String(text || '').trim();
-  if (!t) return;
+/** 停止全部朗读 */
+function stopSpeak() {
+  try { if (SPEECH_OK) speechSynthesis.cancel(); } catch (e) {}
+  if (_audio) {
+    try { _audio.pause(); } catch (e) {}
+    _audio = null;
+  }
+}
+
+/** 在线音频兜底播放 */
+function speakOnline(text, rate) {
+  stopSpeak();
+  const token = ++_fallToken;
+  try {
+    const a = new Audio(ttsUrl(text, rate));
+    a.crossOrigin = 'anonymous';
+    a.onended = () => { if (_audio === a) _audio = null; };
+    a.onerror = () => {
+      if (_audio === a) _audio = null;
+      if (token === _fallToken) toast('朗读加载失败，请检查网络');
+    };
+    _audio = a;
+    const p = a.play();
+    if (p && p.catch) p.catch(() => {
+      if (token === _fallToken) toast('请先点击页面任意处再试');
+    });
+    return true;
+  } catch (e) { toast('朗读失败'); return false; }
+}
+
+/** 用系统语音播一次；播不出来时调用 fallback（只触发一次） */
+function speakLocal(t, r, onFail) {
+  let fired = false;
+  const once = () => { if (!fired) { fired = true; onFail(); } };
   try {
     speechSynthesis.cancel();
-    if (!_voice) _voice = pickVoice();
     const u = new SpeechSynthesisUtterance(t);
     u.lang = 'zh-CN';
     if (_voice) u.voice = _voice;
-    u.rate = rate || 0.85;
-    u.pitch = 1;
+    u.rate = r; u.pitch = 1;
+    u.onerror = once;
+    u.onstart = () => { fired = true; };   // 成功出声就不再兜底
+    // 600ms 内仍未开始播放 → 判定引擎缺失
+    setTimeout(() => {
+      if (!fired && !speechSynthesis.speaking && !speechSynthesis.pending) once();
+    }, 600);
     speechSynthesis.speak(u);
-  } catch (e) { toast('朗读失败'); }
+  } catch (e) { once(); }
+}
+
+/** 朗读文本；优先系统语音，不可用/失败时回退在线音频 */
+function speak(text, rate) {
+  const t = String(text || '').trim();
+  if (!t) return;
+  const r = rate || 0.85;
+  _fallToken++;   // 作废上一次的兜底
+  if (SPEECH_OK) {
+    if (!_voice) _voice = pickVoice();
+    speakLocal(t, r, () => speakOnline(t, r));
+    return;
+  }
+  speakOnline(t, r);
 }
 
 /** 带喇叭图标的朗读按钮 HTML */
 function speakBtn(text, cls, title) {
-  if (!SPEECH_OK) return '';
   return `<button class="${cls || 'speak-inline'}" data-speak="${esc(text)}" title="${esc(title || '朗读')}">🔊</button>`;
 }
 
@@ -191,6 +256,7 @@ const PAGES = { setup: '#page-setup', home: '#page-home', lesson: '#page-lesson'
 };
 
 function showPage(name) {
+  if (state.page !== name) stopSpeak();   // 切页时停掉正在朗读的内容
   Object.entries(PAGES).forEach(([k, sel]) => { $(sel).hidden = (k !== name); });
   $('#pageTitle').textContent = TITLES[name] || '';
   $('#backBtn').hidden = (name === 'setup' || name === 'home');
@@ -465,6 +531,13 @@ function bindHomeEvents() {
     const sp = e.target.closest('[data-speak]');
     if (sp) {
       e.stopPropagation();
+      // 再点一次同一个按钮 = 停止
+      const playing = sp.classList.contains('speaking');
+      document.querySelectorAll('[data-speak].speaking')
+        .forEach(b => b.classList.remove('speaking'));
+      if (playing) { stopSpeak(); return; }
+      sp.classList.add('speaking');
+      setTimeout(() => sp.classList.remove('speaking'), 6000);
       speak(sp.dataset.speak, sp.dataset.rate ? parseFloat(sp.dataset.rate) : undefined);
       return;
     }

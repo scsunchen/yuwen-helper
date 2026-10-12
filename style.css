@@ -580,3 +580,14 @@ body { padding-bottom: 40px; }
 }
 .tab-play:active { background: #dfeaff; }
 .tabs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* 朗读按钮：正在播放状态 */
+[data-speak].speaking {
+  background: var(--brand, #2f6fed) !important;
+  color: #fff !important;
+  animation: speakPulse 1s ease-in-out infinite;
+}
+@keyframes speakPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .7; transform: scale(1.08); }
+}
