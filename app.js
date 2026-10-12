@@ -6,6 +6,8 @@
 // 相对路径：兼容 https://<user>.github.io/<repo>/ 这类子路径部署
 const DATA = './data/';
 const LS_KEY = 'yw_prep_setup_v2';
+const LS_PROGRESS = 'yw_prep_progress_v1';   // 学习进度
+const LS_STARS = 'yw_prep_stars_v1';         // 收藏的生字
 
 // ---------- 全局状态 ----------
 const state = {
@@ -23,6 +25,8 @@ const state = {
   metaMap: {},         // 字 -> 轻量信息（拼音/部首/结构/笔画数）
   versionCache: {},    // 版本 id -> 版本索引（避免重复请求）
   bookCache: {},       // "版本id/册key" -> 册索引（避免重复请求）
+  progress: {},        // "版本id/课id" -> 'learning' | 'done'
+  stars: [],           // 收藏的生字（按收藏时间倒序）
 };
 
 const $ = (s) => document.querySelector(s);
@@ -55,10 +59,135 @@ function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
+// ==================================================================
+// 学习进度（localStorage 持久化，与教材设置分开存放）
+// ==================================================================
+function loadProgress() {
+  try {
+    state.progress = JSON.parse(localStorage.getItem(LS_PROGRESS) || '{}') || {};
+  } catch (e) { state.progress = {}; }
+}
+
+function saveProgress() {
+  try { localStorage.setItem(LS_PROGRESS, JSON.stringify(state.progress)); } catch (e) {}
+}
+
+/** 进度键：版本 + 课文，跨册唯一 */
+function progressKey(lessonId) {
+  const vid = state.setup.textbookId || '_';
+  return `${vid}/${lessonId || (state.lesson && state.lesson.id) || ''}`;
+}
+
+function getStatus(lessonId) {
+  return state.progress[progressKey(lessonId)] || 'todo';
+}
+
+function setStatus(lessonId, status) {
+  const k = progressKey(lessonId);
+  if (status === 'todo') delete state.progress[k];
+  else state.progress[k] = status;
+  saveProgress();
+}
+
+/** 统计当前册的进度 */
+function bookStats() {
+  const b = state.book;
+  if (!b) return { total: 0, done: 0, learning: 0, todo: 0, pct: 0 };
+  let done = 0, learning = 0;
+  b.lessons.forEach(l => {
+    const s = getStatus(l.id);
+    if (s === 'done') done++;
+    else if (s === 'learning') learning++;
+  });
+  const total = b.lessons.length;
+  return {
+    total, done, learning, todo: total - done - learning,
+    pct: total ? Math.round((done + learning * 0.5) / total * 100) : 0,
+  };
+}
+
+function renderProgress() {
+  const s = bookStats();
+  $('#progressNum').textContent = `${s.done} / ${s.total}`;
+  $('#progressFill').style.width = s.pct + '%';
+  $('#cntDone').textContent = s.done;
+  $('#cntLearning').textContent = s.learning;
+  $('#cntTodo').textContent = s.todo;
+  $('#starCount').textContent = state.stars.length;
+}
+
+// ==================================================================
+// 生字收藏（我的生字本）
+// ==================================================================
+function loadStars() {
+  try {
+    state.stars = JSON.parse(localStorage.getItem(LS_STARS) || '[]') || [];
+  } catch (e) { state.stars = []; }
+  if (!Array.isArray(state.stars)) state.stars = [];
+}
+
+function saveStars() {
+  try { localStorage.setItem(LS_STARS, JSON.stringify(state.stars)); } catch (e) {}
+}
+
+function isStarred(ch) { return state.stars.includes(ch); }
+
+function toggleStar(ch) {
+  const i = state.stars.indexOf(ch);
+  if (i >= 0) state.stars.splice(i, 1);
+  else state.stars.unshift(ch);   // 新收藏的排前面
+  saveStars();
+  return i < 0;                   // true = 本次收藏
+}
+
+// ==================================================================
+// 朗读（Web Speech API，零依赖；不支持时自动隐藏按钮）
+// ==================================================================
+const SPEECH_OK = typeof window !== 'undefined'
+  && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+
+let _voice = null;
+function pickVoice() {
+  if (!SPEECH_OK) return null;
+  const vs = speechSynthesis.getVoices() || [];
+  // 优先中文语音（zh-CN > zh 开头）
+  return vs.find(v => /zh[-_]CN/i.test(v.lang))
+      || vs.find(v => /^zh/i.test(v.lang))
+      || null;
+}
+if (SPEECH_OK) {
+  _voice = pickVoice();
+  // 语音列表在部分浏览器异步就绪，就绪后重新挑一次
+  speechSynthesis.addEventListener?.('voiceschanged', () => { _voice = pickVoice(); });
+}
+
+/** 朗读文本；rate 默认稍慢，方便跟读 */
+function speak(text, rate) {
+  if (!SPEECH_OK) { toast('当前浏览器不支持朗读'); return; }
+  const t = String(text || '').trim();
+  if (!t) return;
+  try {
+    speechSynthesis.cancel();
+    if (!_voice) _voice = pickVoice();
+    const u = new SpeechSynthesisUtterance(t);
+    u.lang = 'zh-CN';
+    if (_voice) u.voice = _voice;
+    u.rate = rate || 0.85;
+    u.pitch = 1;
+    speechSynthesis.speak(u);
+  } catch (e) { toast('朗读失败'); }
+}
+
+/** 带喇叭图标的朗读按钮 HTML */
+function speakBtn(text, cls, title) {
+  if (!SPEECH_OK) return '';
+  return `<button class="${cls || 'speak-inline'}" data-speak="${esc(text)}" title="${esc(title || '朗读')}">🔊</button>`;
+}
+
 // ---------- 页面切换 ----------
-const PAGES = { setup: '#page-setup', home: '#page-home', lesson: '#page-lesson', chars: '#page-chars' };const TITLES = {
+const PAGES = { setup: '#page-setup', home: '#page-home', lesson: '#page-lesson', chars: '#page-chars', stars: '#page-stars' };const TITLES = {
   setup: '教材设置', home: '小学语文预习小助手',
-  lesson: '课程讲解', chars: '生字词学习',
+  lesson: '课程讲解', chars: '生字词学习', stars: '我的生字本',
 };
 
 function showPage(name) {
@@ -71,8 +200,16 @@ function showPage(name) {
 }
 
 function goBack() {
+  // 离开页面前，先收起可能打开着的笔顺弹层
+  if (!$('#strokeModal').hidden) closeStrokeModal();
   if (state.page === 'chars') { showLesson(); }
-  else if (state.page === 'lesson') { showPage('home'); }
+  else if (state.page === 'stars') { showPage('home'); }
+  else if (state.page === 'lesson') {
+    showPage('home');
+    // 学习状态可能已变化，回首页时刷新进度与列表标记
+    renderProgress();
+    renderCatalog();
+  }
   else { showPage('home'); }
 }
 
@@ -248,6 +385,7 @@ async function loadBook() {
   state.book = await loadBookIndex(vid, key, `${state.setup.grade}年级${state.setup.term}`);
   renderCurrentBook();
   renderCatalog();
+  renderProgress();
 }
 
 function renderCurrentBook() {
@@ -293,8 +431,11 @@ function lessonItemHTML(l, keyword) {
     const re = new RegExp('(' + keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
     title = title.replace(re, '<mark>$1</mark>');
   }
+  const st = getStatus(l.id);
+  const stTag = st === 'done' ? '<span class="li-status st-done">✓ 已掌握</span>'
+              : st === 'learning' ? '<span class="li-status st-learning">学习中</span>' : '';
   return `<div class="lesson-item ${l.stub ? '' : 'has-content'}" data-id="${esc(l.id)}">
-    <div class="li-title">${title}</div>
+    <div class="li-title">${title}${stTag}</div>
     <div class="li-unit">${esc(l.lessonType || '')}</div>
     <div class="li-badge ${l.stub ? 'badge-stub' : 'badge-full'}">${l.stub ? '待补充' : '有讲解'}</div>
   </div>`;
@@ -320,8 +461,87 @@ function bindHomeEvents() {
   });
 
   document.addEventListener('click', e => {
+    // 朗读按钮（优先判断，避免被父级点击拦截）
+    const sp = e.target.closest('[data-speak]');
+    if (sp) {
+      e.stopPropagation();
+      speak(sp.dataset.speak, sp.dataset.rate ? parseFloat(sp.dataset.rate) : undefined);
+      return;
+    }
+    // 收藏星标
+    const st = e.target.closest('[data-star]');
+    if (st) {
+      e.stopPropagation();
+      const now = toggleStar(st.dataset.star);
+      st.classList.toggle('on', now);
+      $('#starCount').textContent = state.stars.length;
+      toast(now ? '已加入我的生字本 ⭐' : '已取消收藏');
+      return;
+    }
     const item = e.target.closest('.lesson-item');
     if (item) openLesson(item.dataset.id);
+  });
+}
+
+/** 我的生字本页面 */
+function renderStarsPage() {
+  const box = $('#starsContent');
+  const n = state.stars.length;
+  $('#starCount').textContent = n;
+  if (!n) {
+    box.className = '';
+    box.innerHTML = `<div class="stars-empty">
+      还没有收藏的生字<br>
+      在「生字词学习」页点生字卡右上角的 ⭐ 就能收藏
+    </div>`;
+    return;
+  }
+  box.className = 'char-grid';
+  // 用当前册的笔顺数据渲染；缺失时退化为拼音/笔画信息
+  box.innerHTML = renderCharCards(state.stars);
+  bindStarCards();
+}
+
+function bindStarsEvents() {
+  const goStars = () => {
+    $('#starCount').textContent = state.stars.length;
+    renderStarsPage();
+    showPage('stars');
+  };
+  $('#goStarBtn').addEventListener('click', goStars);
+
+  $('#starsClear').addEventListener('click', () => {
+    if (!state.stars.length) return;
+    if (!confirm('确定要清空「我的生字本」吗？此操作不可撤销。')) return;
+    state.stars = [];
+    saveStars();
+    renderStarsPage();
+    $('#starCount').textContent = 0;
+    toast('已清空我的生字本');
+  });
+
+  $('#starsPlayAll').addEventListener('click', () => {
+    if (!state.stars.length) { toast('生字本是空的'); return; }
+    if (!SPEECH_OK) { toast('当前浏览器不支持朗读'); return; }
+    speak(state.stars.join('、'), 0.7);
+  });
+}
+
+/** 课文页的学习状态切换 */
+function bindStatusEvents() {
+  $$('#statusRow .status-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      const L = state.lesson;
+      if (!L) return;
+      const next = getStatus(L.id) === b.dataset.status ? 'todo' : b.dataset.status;
+      setStatus(L.id, next);
+      renderLesson(L);
+      toast(next === 'done' ? '已标记为「已掌握」✓'
+          : next === 'learning' ? '已标记为「学习中」' : '已重置为「未学」');
+    });
+  });
+  $('#speakTitleBtn').addEventListener('click', () => {
+    if (state.lesson) speak(state.lesson.title);
   });
 }
 
@@ -441,6 +661,21 @@ function renderLesson(L) {
   $('#lessonMeta').textContent =
     `${L.textbook} · ${L.grade}年级${L.term} · ${L.unit || ''}${L.author ? ' · ' + L.author : ''}`;
 
+  // 标题朗读按钮
+  const tb = $('#speakTitleBtn');
+  tb.hidden = !SPEECH_OK;
+  tb.dataset.speak = L.title;
+
+  // 学习状态按钮高亮
+  const cur = getStatus(L.id);
+  $$('#statusRow .status-btn').forEach(b => {
+    b.classList.remove('on-done', 'on-learning');
+    if (b.dataset.status === cur) {
+      if (cur === 'done') b.classList.add('on-done');
+      else if (cur === 'learning') b.classList.add('on-learning');
+    }
+  });
+
   const body = $('#lessonBody');
 
   // 按课文实际数据决定生字入口是否可见
@@ -467,10 +702,11 @@ function renderLesson(L) {
 
   // 课文原文
   if (L.text && L.text.length) {
+    const fullText = L.text.join('');
     html += `<div class="block">
-      <h3>课文原文</h3>
+      <h3>课文原文${speakBtn(fullText, 'speak-inline', '朗读课文')}</h3>
       <div class="poem ${L.lessonType === '古诗' ? 'center' : ''}">
-        ${L.text.map(t => `<p>${esc(t)}</p>`).join('')}
+        ${L.text.map(t => `<p>${esc(t)}${speakBtn(t, 'speak-inline', '朗读本句')}</p>`).join('')}
       </div>
     </div>`;
   }
@@ -625,6 +861,8 @@ function renderCharCards(chars) {
     const r = info.r || '';
     const hasAnim = !!(strokeMap[ch] && strokeMap[ch].st);
     return `<div class="char-card${hasAnim ? '' : ' no-anim'}" data-char="${esc(ch)}">
+      ${SPEECH_OK ? `<button class="char-speak" data-speak="${esc(ch)}" title="朗读">🔊</button>` : ''}
+      <button class="char-star${isStarred(ch) ? ' on' : ''}" data-star="${esc(ch)}" title="收藏到我的生字本">⭐</button>
       <div class="cc-pinyin">${esc(py)}</div>
       <div class="cc-char">${esc(ch)}</div>
       <div class="cc-info">${n ? n + '画' : ''}${r ? ' · ' + esc(r) : ''}</div>
@@ -635,16 +873,41 @@ function renderCharCards(chars) {
 
 function bindCharCards() {
   $$('#charContent .char-card').forEach(c => {
-    c.addEventListener('click', () => openStroke(c.dataset.char));
+    c.addEventListener('click', e => {
+      // 点在星标 / 朗读等内嵌按钮上时，不触发笔顺动画
+      if (e.target.closest('[data-star],[data-speak]')) return;
+      openStroke(c.dataset.char);
+    });
+  });
+}
+
+/** 我的生字本里的卡片绑定（同样的规则） */
+function bindStarCards() {
+  $$('#starsContent .char-card').forEach(c => {
+    c.addEventListener('click', e => {
+      if (e.target.closest('[data-star],[data-speak]')) return;
+      openStroke(c.dataset.char);
+    });
   });
 }
 
 /** 渲染三个标签页并绑定事件 */
 function renderCharTabs() {
+  const L = state.lesson;
+  let playBtn = '';
+  if (SPEECH_OK && L) {
+    const list = state.charTab === 'one' ? (L.classOne || [])
+               : state.charTab === 'two' ? (L.classTwo || [])
+               : (L.wordsOne || []).concat(L.wordsTwo || []);
+    if (list.length) {
+      playBtn = `<button class="tab-play" data-speak="${esc(list.join('、'))}" data-rate="0.7">🔊 依次朗读（${list.length}）</button>`;
+    }
+  }
   $('#charTabs').innerHTML = `
     <div class="tab ${state.charTab === 'one' ? 'active' : ''}" data-tab="one">一类字（会写）</div>
     <div class="tab ${state.charTab === 'two' ? 'active' : ''}" data-tab="two">二类字（会认）</div>
-    <div class="tab ${state.charTab === 'words' ? 'active' : ''}" data-tab="words">词语积累</div>`;
+    <div class="tab ${state.charTab === 'words' ? 'active' : ''}" data-tab="words">词语积累</div>
+    ${playBtn}`;
   $$('#charTabs .tab').forEach(t => t.addEventListener('click', () => {
     state.charTab = t.dataset.tab;
     renderCharsPage();
@@ -660,7 +923,7 @@ function renderWords(L) {
   groups.forEach(g => {
     if (!g.words.length) return;
     html += `<div class="section-label">${g.label}</div><div class="word-list">`;
-    html += g.words.map(w => `<div class="word-item"><span class="wi-text">${esc(w)}</span></div>`).join('');
+    html += g.words.map(w => `<div class="word-item"><span class="wi-text">${esc(w)}</span>${speakBtn(w, 'speak-inline', '朗读词语')}</div>`).join('');
     html += '</div><div style="height:16px"></div>';
   });
   $('#charContent').innerHTML = html || '<div class="block empty">本课暂无词语积累</div>';
@@ -905,6 +1168,12 @@ async function main() {
   bindHomeEvents();
   bindCharsEvents();
   bindStrokeModal();
+  bindStatusEvents();
+  bindStarsEvents();
+
+  // 载入本地学习数据（进度 + 收藏）
+  loadProgress();
+  loadStars();
 
   $('#backBtn').addEventListener('click', goBack);
   $('#setupBtn').addEventListener('click', async () => {

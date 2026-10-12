@@ -247,8 +247,9 @@ body { padding-bottom: 40px; }
 .char-card .cc-char { font-size: 34px; line-height: 1.25; font-weight: 400; }
 .char-card .cc-info { font-size: 10.5px; color: var(--text-light); margin-top: 3px; }
 .char-card .cc-play {
-  position: absolute; top: 5px; right: 5px;
+  position: absolute; bottom: 4px; right: 6px;
   font-size: 11px; color: var(--text-light); opacity: .55;
+  pointer-events: none;   /* 不拦截点击，避免遮挡星标/朗读按钮 */
 }
 
 /* 词语列表 */
@@ -390,3 +391,192 @@ body { padding-bottom: 40px; }
   cursor: not-allowed;
   opacity: .9;
 }
+
+/* ================================================================== */
+/* 学习进度                                                           */
+/* ================================================================== */
+.progress-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 10px 0;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .06);
+}
+.progress-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.progress-label { font-size: 13px; color: #5a6472; font-weight: 600; }
+.progress-num { font-size: 15px; color: #2f6fed; font-weight: 700; }
+.progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: #eef1f5;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #4f8df7, #2f6fed);
+  transition: width .35s ease;
+}
+.progress-legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: #7a8493;
+  flex-wrap: wrap;
+}
+.progress-legend .lg::before {
+  content: '';
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: 1px;
+}
+.lg-done::before { background: #34c759; }
+.lg-learning::before { background: #f0a020; }
+.lg-todo::before { background: #c9ccd2; }
+.progress-legend b { color: #40485a; }
+
+.quick-row { margin: 10px 0; }
+.quick-btn {
+  width: 100%;
+  padding: 11px;
+  border: 1px solid #ffe0a3;
+  background: #fffaf0;
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: #8a6100;
+  font-weight: 600;
+  cursor: pointer;
+}
+.quick-btn:active { background: #fff4de; }
+.quick-btn b { color: #f0a020; }
+
+/* 课文条目的学习状态 */
+.li-status {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.st-done { background: #e6f9ec; color: #1f9d4d; }
+.st-learning { background: #fff4e0; color: #b8760a; }
+
+/* 课文页状态切换 */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.status-hint { font-size: 12px; color: #8a93a2; margin-right: 2px; }
+.status-btn {
+  padding: 5px 13px;
+  border-radius: 15px;
+  border: 1px solid #d9dee6;
+  background: #fff;
+  font-size: 12.5px;
+  color: #5a6472;
+  cursor: pointer;
+  transition: .15s;
+}
+.status-btn:active { transform: scale(.96); }
+.status-btn.on-done { background: #34c759; border-color: #34c759; color: #fff; font-weight: 600; }
+.status-btn.on-learning { background: #f0a020; border-color: #f0a020; color: #fff; font-weight: 600; }
+
+/* 朗读按钮 */
+.speak-btn {
+  border: none;
+  background: #eef4ff;
+  color: #2f6fed;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.speak-btn:active { transform: scale(.9); }
+.speak-inline {
+  border: none;
+  background: transparent;
+  color: #2f6fed;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: .75;
+}
+.speak-inline:active { opacity: 1; }
+.char-speak {
+  position: absolute;
+  top: 4px; left: 5px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: .55;
+  padding: 2px;
+  z-index: 2;
+}
+.char-speak:active { opacity: 1; }
+
+/* 生字卡上的收藏星标 */
+.char-star {
+  position: absolute;
+  top: 3px; right: 3px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 3px 5px;
+  line-height: 1;
+  filter: grayscale(1);
+  opacity: .4;
+  transition: .15s;
+  z-index: 2;
+}
+.char-star.on { filter: none; opacity: 1; transform: scale(1.12); }
+
+/* 我的生字本 */
+.stars-head { padding: 4px 0 10px; }
+.stars-head h2 { font-size: 17px; margin: 0 0 4px; color: #23303f; }
+.stars-sub { font-size: 12px; color: #8a93a2; margin: 0; }
+.stars-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.act-btn.danger { color: #d64545; border-color: #ffd9d9; background: #fff6f6; }
+.stars-empty {
+  text-align: center;
+  color: #9aa3b0;
+  padding: 40px 20px;
+  font-size: 13.5px;
+  line-height: 1.8;
+}
+
+/* 生字页「依次朗读」按钮 */
+.tab-play {
+  margin-left: auto;
+  align-self: center;
+  border: 1px solid #cfe0ff;
+  background: #eef4ff;
+  color: #2f6fed;
+  font-size: 12px;
+  padding: 5px 11px;
+  border-radius: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab-play:active { background: #dfeaff; }
+.tabs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

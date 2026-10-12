@@ -57,6 +57,23 @@
 <section class="page" id="page-home" hidden>
   <div class="current-book" id="currentBook"></div>
 
+  <div class="progress-card" id="progressCard">
+    <div class="progress-top">
+      <span class="progress-label">学习进度</span>
+      <span class="progress-num" id="progressNum">0 / 0</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-legend">
+      <span class="lg lg-done">已掌握 <b id="cntDone">0</b></span>
+      <span class="lg lg-learning">学习中 <b id="cntLearning">0</b></span>
+      <span class="lg lg-todo">未学 <b id="cntTodo">0</b></span>
+    </div>
+  </div>
+
+  <div class="quick-row">
+    <button class="quick-btn" id="goStarBtn">⭐ 我的生字本 <b id="starCount">0</b></button>
+  </div>
+
   <div class="search-box">
     <input type="text" id="searchInput" placeholder="输入课文标题，如「秋天」「静夜思」">
     <button id="clearSearch" class="clear-btn" hidden>×</button>
@@ -65,7 +82,7 @@
   <div id="searchResults" class="lesson-list" hidden></div>
 
   <div id="catalogView">
-    <div class="section-label">本册课文</div>
+    <div class="section-label" id="catalogLabel">本册课文</div>
     <div id="catalogList" class="lesson-list"></div>
   </div>
 </section>
@@ -76,8 +93,15 @@
     <div class="lesson-title-row">
       <h2 id="lessonTitle"></h2>
       <span class="tag" id="lessonType"></span>
+      <button class="speak-btn" id="speakTitleBtn" title="朗读课文标题">🔊</button>
     </div>
     <div class="lesson-meta" id="lessonMeta"></div>
+    <div class="status-row" id="statusRow">
+      <span class="status-hint">学习状态</span>
+      <button class="status-btn" data-status="todo">未学</button>
+      <button class="status-btn" data-status="learning">学习中</button>
+      <button class="status-btn" data-status="done">已掌握</button>
+    </div>
     <button class="stroke-entry" id="goCharsBtn">查看本课生字词 ▸</button>
   </div>
   <div id="lessonBody"></div>
@@ -87,6 +111,19 @@
 <section class="page" id="page-chars" hidden>
   <div class="tabs" id="charTabs"></div>
   <div id="charContent"></div>
+</section>
+
+<!-- ========== 页面 5：我的生字本 ========== -->
+<section class="page" id="page-stars" hidden>
+  <div class="stars-head">
+    <h2>⭐ 我的生字本</h2>
+    <p class="stars-sub" id="starsSub">点开生字旁的星星即可收藏，随时随地复习。</p>
+  </div>
+  <div class="stars-toolbar">
+    <button class="act-btn" id="starsPlayAll">🔊 依次朗读</button>
+    <button class="act-btn danger" id="starsClear">🗑 清空</button>
+  </div>
+  <div id="starsContent" class="chars-grid"></div>
 </section>
 
 <!-- ========== 弹层：笔顺详情 ========== -->
