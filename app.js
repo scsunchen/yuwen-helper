@@ -23,6 +23,7 @@ const state = {
   speed: 5,
   charInfoMap: {},     // 册 key -> 字形信息（含笔画）
   metaMap: {},         // 字 -> 轻量信息（拼音/部首/结构/笔画数）
+  wordMap: null,       // 字 -> 组词（按年级匹配，data/hanzi/words.json）
   versionCache: {},    // 版本 id -> 版本索引（避免重复请求）
   bookCache: {},       // "版本id/册key" -> 册索引（避免重复请求）
   progress: {},        // "版本id/课id" -> 'learning' | 'done'
@@ -868,7 +869,23 @@ async function ensureCharInfo(chars) {
   if (!Object.keys(state.metaMap).length) {
     try { state.metaMap = await getJSON(`${DATA}hanzi/meta.json`); } catch (e) { state.metaMap = {}; }
   }
+  // 组词表（全量一次，含按年级匹配的词语）
+  await ensureWordMap();
   return state.charInfoMap[key] || {};
+}
+
+/** 加载「生字组词」表（全量约 60KB，只请求一次） */
+async function ensureWordMap() {
+  if (state.wordMap) return state.wordMap;
+  try { state.wordMap = await getJSON(`${DATA}hanzi/words.json`); }
+  catch (e) { state.wordMap = {}; }
+  return state.wordMap;
+}
+
+/** 取某个字的组词数组（可能为空） */
+function wordsOf(ch) {
+  const v = state.wordMap && state.wordMap[ch];
+  return (v && v.w) ? v.w : [];
 }
 
 /** 当前册已加载的笔顺映射 */
@@ -933,6 +950,11 @@ function renderCharCards(chars) {
     const n = info.n || (info.st ? info.st.length : '');
     const r = info.r || '';
     const hasAnim = !!(strokeMap[ch] && strokeMap[ch].st);
+    const ws = wordsOf(ch);
+    const wHtml = ws.length
+      ? `<div class="cc-words">${ws.map(w =>
+          `<span class="cc-word" data-word="${esc(w)}">${esc(w)}</span>`).join('')}</div>`
+      : '';
     return `<div class="char-card${hasAnim ? '' : ' no-anim'}" data-char="${esc(ch)}">
       ${SPEECH_OK ? `<button class="char-speak" data-speak="${esc(ch)}" title="朗读">🔊</button>` : ''}
       <button class="char-star${isStarred(ch) ? ' on' : ''}" data-star="${esc(ch)}" title="收藏到我的生字本">⭐</button>
@@ -940,6 +962,7 @@ function renderCharCards(chars) {
       <div class="cc-char">${esc(ch)}</div>
       <div class="cc-info">${n ? n + '画' : ''}${r ? ' · ' + esc(r) : ''}</div>
       <div class="cc-play">✎</div>
+      ${wHtml}
     </div>`;
   }).join('');
 }
@@ -947,9 +970,16 @@ function renderCharCards(chars) {
 function bindCharCards() {
   $$('#charContent .char-card').forEach(c => {
     c.addEventListener('click', e => {
-      // 点在星标 / 朗读等内嵌按钮上时，不触发笔顺动画
-      if (e.target.closest('[data-star],[data-speak]')) return;
+      // 点在星标 / 朗读 / 组词 等内嵌元素上时，不触发笔顺动画
+      if (e.target.closest('[data-star],[data-speak],[data-word]')) return;
       openStroke(c.dataset.char);
+    });
+  });
+  // 组词可单独点读
+  $$('#charContent .cc-word').forEach(w => {
+    w.addEventListener('click', e => {
+      e.stopPropagation();
+      speak(w.dataset.word, 0.8);
     });
   });
 }
@@ -1048,6 +1078,22 @@ async function openStroke(ch) {
     `<span class="m-item">${info.n} 画</span>` +
     `<span class="m-item">部首 ${esc(info.r || '—')}</span>` +
     `<span class="m-item">${esc(info.s || '—')}</span>`;
+
+  // 组词（按当前年级匹配）
+  const sw = $('#strokeWords');
+  const ws = wordsOf(ch);
+  if (ws.length) {
+    sw.hidden = false;
+    sw.innerHTML = `<span class="sw-label">组词</span>` + ws.map(w =>
+      `<span class="sw-item" data-word="${esc(w)}">${esc(w)}</span>`).join('') +
+      (SPEECH_OK ? `<button class="sw-speak" data-speak="${esc(ws.join('、'))}" data-rate="0.8" title="朗读组词">🔊</button>` : '');
+    $$('#strokeWords .sw-item').forEach(el => {
+      el.addEventListener('click', () => speak(el.dataset.word, 0.8));
+    });
+  } else {
+    sw.hidden = true;
+    sw.innerHTML = '';
+  }
 
   $('#strokeModal').hidden = false;
 

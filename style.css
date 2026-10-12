@@ -251,6 +251,18 @@ body { padding-bottom: 40px; }
   font-size: 11px; color: var(--text-light); opacity: .55;
   pointer-events: none;   /* 不拦截点击，避免遮挡星标/朗读按钮 */
 }
+/* 卡片上的组词（年级匹配） */
+.char-card .cc-words {
+  display: flex; flex-wrap: wrap; gap: 3px; justify-content: center;
+  margin-top: 6px; padding-top: 5px; border-top: 1px dashed #eef1f6;
+}
+.char-card .cc-word {
+  font-size: 10.5px; line-height: 1.4; color: var(--primary);
+  background: #f2f7ff; border-radius: 5px; padding: 1px 5px;
+  cursor: pointer; white-space: nowrap;
+}
+.char-card .cc-word:active { background: #dfeaff; }
+.char-card.no-anim .cc-word { color: var(--text-sub); background: #f3f5f8; }
 
 /* 词语列表 */
 .word-list { display: flex; flex-direction: column; gap: 8px; }
@@ -287,6 +299,23 @@ body { padding-bottom: 40px; }
 .stroke-meta .m-item {
   display: inline-block; margin: 0 5px; padding: 1px 9px;
   background: #f3f5f8; border-radius: 6px; font-size: 12px;
+}
+/* 弹层里的组词（年级匹配） */
+.stroke-words {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  justify-content: center; margin: 0 0 14px;
+}
+.stroke-words .sw-label {
+  font-size: 12px; color: var(--text-light); margin-right: 2px;
+}
+.stroke-words .sw-item {
+  font-size: 13px; color: var(--primary); background: #f2f7ff;
+  border-radius: 7px; padding: 3px 10px; cursor: pointer;
+}
+.stroke-words .sw-item:active { background: #dfeaff; }
+.stroke-words .sw-speak {
+  border: none; background: #f3f5f8; border-radius: 7px;
+  font-size: 13px; padding: 3px 8px; cursor: pointer;
 }
 
 .tian-grid {
