@@ -190,9 +190,23 @@ body { padding-bottom: 40px; }
 .poem.center { text-align: center; }
 .poem.center p { letter-spacing: 3px; }
 
+/* 课文朗读音频按钮 */
+.audio-btn {
+  margin-left: 8px; padding: 3px 12px; font-size: 13px; font-weight: 500;
+  color: #fff; background: linear-gradient(135deg, #4a9eff, #3a7bd5);
+  border: none; border-radius: 14px; cursor: pointer;
+  box-shadow: 0 2px 6px rgba(58, 123, 213, .28);
+  transition: transform .12s, box-shadow .15s;
+  vertical-align: middle;
+}
+.audio-btn:active { transform: scale(.95); }
+.audio-btn.playing {
+  background: linear-gradient(135deg, #ff9a4a, #f57c1f);
+  box-shadow: 0 2px 6px rgba(245, 124, 31, .28);
+}
+
 /* 拼音开关 */
-.py-toggle { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
-.py-switch {
+.py-toggle { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }.py-switch {
   border: 1px solid var(--primary); color: var(--primary); background: #f2f7ff;
   border-radius: 14px; padding: 3px 12px; font-size: 12.5px; cursor: pointer;
   transition: all .15s;

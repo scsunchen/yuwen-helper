@@ -27,6 +27,7 @@ const state = {
   wordMap: null,       // 字 -> 组词（按年级匹配，data/hanzi/words.json）
   initialMap: null,    // 字 -> 拼音首字母（音序，大写），data/hanzi/initial.json
   pinyinOn: null,      // 课文原文是否开启逐字拼音（低年级默认开，用户可关）
+  _audio2: null,       // 课文朗读音频播放器
   versionCache: {},    // 版本 id -> 版本索引（避免重复请求）
   bookCache: {},       // "版本id/册key" -> 册索引（避免重复请求）
   progress: {},        // "版本id/课id" -> 'learning' | 'done'
@@ -813,7 +814,7 @@ function renderLesson(L) {
     if (hasPy && state.pinyinOn === null) state.pinyinOn = loadPyPref();
     const pyOn = hasPy && state.pinyinOn;
     html += `<div class="block">
-      <h3>课文原文${speakBtn(fullText, 'speak-inline', '朗读课文')}</h3>
+      <h3>课文原文${L.audio ? `<button class="audio-btn" id="audioBtn" data-src="${esc(L.audio)}" title="播放课文朗读音频">▶ 听课文</button>` : ''}${speakBtn(fullText, 'speak-inline', '朗读课文')}</h3>
       ${hasPy ? `<div class="py-toggle">
         <button class="py-switch${state.pinyinOn ? ' on' : ''}" id="pySwitch">${state.pinyinOn ? '隐藏拼音' : '显示拼音'}</button>
         <span class="py-hint">${state.pinyinOn ? '拼音标注与课本一致' : '低年级可开启逐字注音'}</span>
@@ -881,6 +882,44 @@ function renderLesson(L) {
       renderLesson(L);
     });
   }
+
+  // 课文朗读音频（预生成 mp3，音色自然）
+  const ab = document.getElementById('audioBtn');
+  if (ab) {
+    ab.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleLessonAudio(ab, ab.dataset.src);
+    });
+  }
+}
+
+/** 课文音频播放：同一按钮在播放/暂停之间切换 */
+function toggleLessonAudio(btn, src) {
+  if (!src) return;
+  // 点击同一个正在播放的音频 → 暂停
+  if (state._audio2 && state._audio2.src.endsWith(src) && !state._audio2.paused) {
+    state._audio2.pause();
+    return;
+  }
+  // 换课/换音频：先停掉旧的
+  if (state._audio2) {
+    try { state._audio2.pause(); } catch (e) {}
+    state._audio2 = null;
+  }
+  try { if (SPEECH_OK) speechSynthesis.cancel(); } catch (e) {}
+
+  const a = new Audio(src);
+  state._audio2 = a;
+  const setLabel = (playing) => {
+    btn.textContent = playing ? '⏸ 暂停' : '▶ 听课文';
+    btn.classList.toggle('playing', playing);
+  };
+  a.onplay = () => setLabel(true);
+  a.onpause = () => setLabel(false);
+  a.onended = () => { setLabel(false); state._audio2 = null; };
+  a.onerror = () => { setLabel(false); toast('音频加载失败，请检查网络'); };
+  const p = a.play();
+  if (p && p.catch) p.catch(() => toast('请先点击页面任意处再试'));
 }
 
 /** 课文正文末尾的生字入口区块 */
