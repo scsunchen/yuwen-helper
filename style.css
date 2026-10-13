@@ -190,6 +190,31 @@ body { padding-bottom: 40px; }
 .poem.center { text-align: center; }
 .poem.center p { letter-spacing: 3px; }
 
+/* 拼音开关 */
+.py-toggle { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.py-switch {
+  border: 1px solid var(--primary); color: var(--primary); background: #f2f7ff;
+  border-radius: 14px; padding: 3px 12px; font-size: 12.5px; cursor: pointer;
+  transition: all .15s;
+}
+.py-switch.on { background: var(--primary); color: #fff; }
+.py-switch:active { transform: scale(.96); }
+.py-hint { font-size: 11.5px; color: var(--text-light); }
+
+/* 逐字注音（ruby） */
+.poem.with-py p { line-height: 2.9; letter-spacing: 0; }
+.poem.with-py.center p { letter-spacing: 0; }
+.py-ruby {
+  ruby-align: center;
+  margin: 0 1px;
+  font-size: 17px;
+}
+.py-ruby .py-rt {
+  font-size: 11px; color: var(--primary); font-weight: 500;
+  letter-spacing: 0; line-height: 1.1;
+  font-family: "Times New Roman", Arial, sans-serif;
+}
+
 /* 分段解析 */
 .seg { padding: 12px 0; border-bottom: 1px dashed var(--line); }
 .seg:last-child { border-bottom: none; padding-bottom: 0; }

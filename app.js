@@ -8,6 +8,7 @@ const DATA = './data/';
 const LS_KEY = 'yw_prep_setup_v2';
 const LS_PROGRESS = 'yw_prep_progress_v1';   // 学习进度
 const LS_STARS = 'yw_prep_stars_v1';         // 收藏的生字
+const LS_PINYIN = 'yw_prep_pinyin_v1';       // 课文逐字拼音显示偏好
 
 // ---------- 全局状态 ----------
 const state = {
@@ -25,6 +26,7 @@ const state = {
   metaMap: {},         // 字 -> 轻量信息（拼音/部首/结构/笔画数）
   wordMap: null,       // 字 -> 组词（按年级匹配，data/hanzi/words.json）
   initialMap: null,    // 字 -> 拼音首字母（音序，大写），data/hanzi/initial.json
+  pinyinOn: null,      // 课文原文是否开启逐字拼音（低年级默认开，用户可关）
   versionCache: {},    // 版本 id -> 版本索引（避免重复请求）
   bookCache: {},       // "版本id/册key" -> 册索引（避免重复请求）
   progress: {},        // "版本id/课id" -> 'learning' | 'done'
@@ -133,6 +135,17 @@ function saveStars() {
 }
 
 function isStarred(ch) { return state.stars.includes(ch); }
+
+/** 课文拼音显示偏好：默认开（低年级），用户手动关闭后记住 */
+function loadPyPref() {
+  const v = localStorage.getItem(LS_PINYIN);
+  if (v === '0') return false;
+  if (v === '1') return true;
+  return true;   // 未设置过 → 默认开启
+}
+function savePyPref(on) {
+  try { localStorage.setItem(LS_PINYIN, on ? '1' : '0'); } catch (e) {}
+}
 
 function toggleStar(ch) {
   const i = state.stars.indexOf(ch);
@@ -739,6 +752,14 @@ function showLesson() {
   showPage('lesson');
 }
 
+/** 渲染一行带注音的课文：每个汉字上方标拼音，标点原样显示 */
+function renderPyLine(pairs) {
+  return pairs.map(([ch, py]) => {
+    if (!py) return esc(ch);   // 标点等非注音字符
+    return `<ruby class="py-ruby">${esc(ch)}<rt class="py-rt">${esc(py)}</rt></ruby>`;
+  }).join('');
+}
+
 function renderLesson(L) {
   $('#lessonTitle').textContent = L.title;
   $('#lessonType').textContent = L.lessonType || '';
@@ -784,13 +805,24 @@ function renderLesson(L) {
 
   let html = '';
 
-  // 课文原文
+  // 课文原文（低年级可叠加逐字拼音）
   if (L.text && L.text.length) {
     const fullText = L.text.join('');
+    const hasPy = !!(L.pinyin && L.pinyin.length);
+    // 首次进入有拼音的课文时默认开启；用户手动切换后持久化，以其选择为准
+    if (hasPy && state.pinyinOn === null) state.pinyinOn = loadPyPref();
+    const pyOn = hasPy && state.pinyinOn;
     html += `<div class="block">
       <h3>课文原文${speakBtn(fullText, 'speak-inline', '朗读课文')}</h3>
-      <div class="poem ${L.lessonType === '古诗' ? 'center' : ''}">
-        ${L.text.map(t => `<p>${esc(t)}${speakBtn(t, 'speak-inline', '朗读本句')}</p>`).join('')}
+      ${hasPy ? `<div class="py-toggle">
+        <button class="py-switch${state.pinyinOn ? ' on' : ''}" id="pySwitch">${state.pinyinOn ? '隐藏拼音' : '显示拼音'}</button>
+        <span class="py-hint">${state.pinyinOn ? '拼音标注与课本一致' : '低年级可开启逐字注音'}</span>
+      </div>` : ''}
+      <div class="poem ${L.lessonType === '古诗' ? 'center' : ''} ${pyOn ? 'with-py' : ''}">
+        ${L.text.map((t, i) => {
+          const py = pyOn && L.pinyin[i] ? L.pinyin[i] : null;
+          return `<p>${py ? renderPyLine(py) : esc(t)}${speakBtn(t, 'speak-inline', '朗读本句')}</p>`;
+        }).join('')}
       </div>
     </div>`;
   }
@@ -838,6 +870,17 @@ function renderLesson(L) {
   }
 
   body.innerHTML = html + renderCharsEntry(L);
+
+  // 拼音显示开关（低年级课文）
+  const sw = document.getElementById('pySwitch');
+  if (sw) {
+    sw.addEventListener('click', e => {
+      e.stopPropagation();
+      state.pinyinOn = !state.pinyinOn;
+      savePyPref(state.pinyinOn);
+      renderLesson(L);
+    });
+  }
 }
 
 /** 课文正文末尾的生字入口区块 */
