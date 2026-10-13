@@ -282,8 +282,9 @@ function showPage(name) {
 }
 
 function goBack() {
-  // 离开页面前，先收起可能打开着的笔顺弹层
+  // 离开页面前，先收起可能打开着的笔顺弹层，并停掉朗读音频
   if (!$('#strokeModal').hidden) closeStrokeModal();
+  if (state.page === 'lesson' || state.page === 'chars') stopAllAudio();
   if (state.page === 'chars') { showLesson(); }
   else if (state.page === 'stars') { showPage('home'); }
   else if (state.page === 'lesson') {
@@ -762,6 +763,9 @@ function renderPyLine(pairs) {
 }
 
 function renderLesson(L) {
+  // 换课时先停掉上一课的朗读音频与语音合成，避免后台继续出声
+  stopAllAudio();
+
   $('#lessonTitle').textContent = L.title;
   $('#lessonType').textContent = L.lessonType || '';
   $('#lessonMeta').textContent =
@@ -893,22 +897,42 @@ function renderLesson(L) {
   }
 }
 
-/** 课文音频播放：同一按钮在播放/暂停之间切换 */
-function toggleLessonAudio(btn, src) {
-  if (!src) return;
-  // 点击同一个正在播放的音频 → 暂停
-  if (state._audio2 && state._audio2.src.endsWith(src) && !state._audio2.paused) {
-    state._audio2.pause();
-    return;
-  }
-  // 换课/换音频：先停掉旧的
-  if (state._audio2) {
-    try { state._audio2.pause(); } catch (e) {}
+/** 停止当前课文音频与浏览器语音合成（换课/离开课文时调用） */
+function stopAllAudio() {
+  const a = state._audio2;
+  if (a) {
+    try { a.pause(); } catch (e) {}
     state._audio2 = null;
   }
   try { if (SPEECH_OK) speechSynthesis.cancel(); } catch (e) {}
+}
+
+/** 课文音频播放：同一按钮在播放/暂停之间切换 */
+function toggleLessonAudio(btn, src) {
+  if (!src) return;
+  // 与 Audio.src 做同源规范化比较（浏览器会把中文等编码成 %XX，不能直接 endsWith 原文）
+  let abs = src;
+  try { abs = new URL(src, location.href).href; } catch (e) {}
+
+  const cur = state._audio2;
+  const same = !!(cur && cur.src === abs);
+
+  // 情况一：本课音频正在播放 → 暂停
+  if (same && !cur.paused) {
+    cur.pause();
+    return;
+  }
+  // 情况二：本课音频处于暂停态 → 接着播
+  if (same && cur.paused) {
+    cur.play().catch(() => toast('请先点击页面任意处再试'));
+    return;
+  }
+
+  // 情况三：切换课程/首次播放 → 先停掉旧的，再新建
+  stopAllAudio();
 
   const a = new Audio(src);
+  a.preload = 'auto';
   state._audio2 = a;
   const setLabel = (playing) => {
     btn.textContent = playing ? '⏸ 暂停' : '▶ 听课文';
@@ -916,10 +940,10 @@ function toggleLessonAudio(btn, src) {
   };
   a.onplay = () => setLabel(true);
   a.onpause = () => setLabel(false);
-  a.onended = () => { setLabel(false); state._audio2 = null; };
-  a.onerror = () => { setLabel(false); toast('音频加载失败，请检查网络'); };
+  a.onended = () => { setLabel(false); if (state._audio2 === a) state._audio2 = null; };
+  a.onerror = () => { setLabel(false); if (state._audio2 === a) state._audio2 = null; toast('音频加载失败，请检查网络'); };
   const p = a.play();
-  if (p && p.catch) p.catch(() => toast('请先点击页面任意处再试'));
+  if (p && p.catch) p.catch(() => { setLabel(false); toast('请先点击页面任意处再试'); });
 }
 
 /** 课文正文末尾的生字入口区块 */
