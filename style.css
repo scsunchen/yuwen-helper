@@ -246,6 +246,14 @@ body { padding-bottom: 40px; }
 }
 .char-card .cc-char { font-size: 34px; line-height: 1.25; font-weight: 400; }
 .char-card .cc-info { font-size: 10.5px; color: var(--text-light); margin-top: 3px; }
+/* 音序徽标（字典查字用，大写首字母） */
+.char-card .cc-initial {
+  display: inline-block; min-width: 14px; padding: 0 4px;
+  margin-right: 3px; font-size: 10px; font-weight: 700;
+  color: #fff; background: var(--primary); border-radius: 4px;
+  line-height: 1.5; letter-spacing: .3px; vertical-align: baseline;
+}
+.char-card.no-anim .cc-initial { background: var(--text-light); }
 .char-card .cc-play {
   position: absolute; bottom: 4px; right: 6px;
   font-size: 11px; color: var(--text-light); opacity: .55;
@@ -300,6 +308,7 @@ body { padding-bottom: 40px; }
   display: inline-block; margin: 0 5px; padding: 1px 9px;
   background: #f3f5f8; border-radius: 6px; font-size: 12px;
 }
+.stroke-meta .m-seq { background: #eaf2ff; color: var(--primary); font-weight: 600; }
 /* 弹层里的组词（年级匹配） */
 .stroke-words {
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center;

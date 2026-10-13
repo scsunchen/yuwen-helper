@@ -24,6 +24,7 @@ const state = {
   charInfoMap: {},     // 册 key -> 字形信息（含笔画）
   metaMap: {},         // 字 -> 轻量信息（拼音/部首/结构/笔画数）
   wordMap: null,       // 字 -> 组词（按年级匹配，data/hanzi/words.json）
+  initialMap: null,    // 字 -> 拼音首字母（音序，大写），data/hanzi/initial.json
   versionCache: {},    // 版本 id -> 版本索引（避免重复请求）
   bookCache: {},       // "版本id/册key" -> 册索引（避免重复请求）
   progress: {},        // "版本id/课id" -> 'learning' | 'done'
@@ -574,6 +575,15 @@ function renderStarsPage() {
   // 用当前册的笔顺数据渲染；缺失时退化为拼音/笔画信息
   box.innerHTML = renderCharCards(state.stars);
   bindStarCards();
+  // 音序表可能尚未加载（用户直接进生字本时），加载后补一次音序显示
+  if (!state.initialMap) {
+    ensureInitialMap().then(() => {
+      if (state.page === 'stars' && state.stars.length) {
+        box.innerHTML = renderCharCards(state.stars);
+        bindStarCards();
+      }
+    });
+  }
 }
 
 function bindStarsEvents() {
@@ -871,6 +881,8 @@ async function ensureCharInfo(chars) {
   }
   // 组词表（全量一次，含按年级匹配的词语）
   await ensureWordMap();
+  // 音序表（全量一次，字 -> 拼音首字母大写）
+  await ensureInitialMap();
   return state.charInfoMap[key] || {};
 }
 
@@ -880,6 +892,19 @@ async function ensureWordMap() {
   try { state.wordMap = await getJSON(`${DATA}hanzi/words.json`); }
   catch (e) { state.wordMap = {}; }
   return state.wordMap;
+}
+
+/** 加载「音序」表（全量约 25KB，只请求一次） */
+async function ensureInitialMap() {
+  if (state.initialMap) return state.initialMap;
+  try { state.initialMap = await getJSON(`${DATA}hanzi/initial.json`); }
+  catch (e) { state.initialMap = {}; }
+  return state.initialMap;
+}
+
+/** 取某字的音序首字母（大写），无则返回空串 */
+function initialOf(ch) {
+  return (state.initialMap && state.initialMap[ch]) || '';
 }
 
 /** 取某个字的组词数组（可能为空） */
@@ -949,6 +974,7 @@ function renderCharCards(chars) {
     const py = (info.p || []).length ? info.p[0] : '';
     const n = info.n || (info.st ? info.st.length : '');
     const r = info.r || '';
+    const ini = initialOf(ch);
     const hasAnim = !!(strokeMap[ch] && strokeMap[ch].st);
     const ws = wordsOf(ch);
     const wHtml = ws.length
@@ -960,7 +986,7 @@ function renderCharCards(chars) {
       <button class="char-star${isStarred(ch) ? ' on' : ''}" data-star="${esc(ch)}" title="收藏到我的生字本">⭐</button>
       <div class="cc-pinyin">${esc(py)}</div>
       <div class="cc-char">${esc(ch)}</div>
-      <div class="cc-info">${n ? n + '画' : ''}${r ? ' · ' + esc(r) : ''}</div>
+      <div class="cc-info">${ini ? `<span class="cc-initial" title="音序（字典查字用）">${esc(ini)}</span>` : ''}${n ? n + '画' : ''}${r ? ' · ' + esc(r) : ''}</div>
       <div class="cc-play">✎</div>
       ${wHtml}
     </div>`;
@@ -1073,8 +1099,10 @@ async function openStroke(ch) {
 
   $('#strokeCharName').textContent = ch;
   const py = (info.p || []).join(' / ');
+  const ini = initialOf(ch);
   $('#strokeMeta').innerHTML =
-    `<span class="m-pinyin">${esc(py)}</span><br>` +
+    `<span class="m-pinyin">${esc(py)}</span>` +
+    (ini ? `<span class="m-item m-seq">音序 ${esc(ini)}</span>` : '') + `<br>` +
     `<span class="m-item">${info.n} 画</span>` +
     `<span class="m-item">部首 ${esc(info.r || '—')}</span>` +
     `<span class="m-item">${esc(info.s || '—')}</span>`;
