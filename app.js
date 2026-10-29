@@ -787,24 +787,24 @@ function renderYard(y, meta) {
     let inner = '';
     if (s.type === 'chars') {
       inner = (s.items || []).map(it => {
-        if (typeof it === 'string') return `<div class="yd-line">${esc(it)}</div>`;
+        if (typeof it === 'string') return `<div class="yd-line">${tapChars(it)}</div>`;
         const words = it.words || '';
         const chars = it.chars || '';
         return `<div class="yd-char-row">
-          <span class="yd-words">${esc(words)}</span>
+          <span class="yd-words">${tapChars(words)}</span>
           ${chars ? `<span class="yd-chars">${[...chars.replace(/\s/g, '')].map(c =>
-            `<span class="yd-char">${esc(c)}</span>`).join('')}</span>` : ''}
+            `<span class="yd-char" data-ch="${esc(c)}">${esc(c)}</span>`).join('')}</span>` : ''}
         </div>`;
       }).join('');
     } else if (s.type === 'poem') {
       inner = `<div class="yd-poem">${(s.items || []).map((t, i) =>
-        `<div class="${i === 0 ? 'yd-poem-title' : i === 1 ? 'yd-poem-author' : 'yd-poem-line'}">${esc(t)}</div>`
+        `<div class="${i === 0 ? 'yd-poem-title' : i === 1 ? 'yd-poem-author' : 'yd-poem-line'}">${i >= 2 ? tapChars(t) : esc(t)}</div>`
       ).join('')}</div>`;
     } else if (s.type === 'article') {
       inner = (s.items || []).map((t, i) =>
-        `<p class="yd-para${i === 0 ? ' yd-art-title' : ''}">${esc(t)}</p>`).join('');
+        `<p class="yd-para${i === 0 ? ' yd-art-title' : ''}">${i === 0 ? esc(t) : tapChars(t)}</p>`).join('');
     } else {
-      inner = (s.items || []).map(t => `<div class="yd-line">${esc(t)}</div>`).join('');
+      inner = (s.items || []).map(t => `<div class="yd-line">${tapChars(t)}</div>`).join('');
     }
     if (s.tip) inner += `<div class="yd-tip">${esc(s.tip)}</div>`;
     return `<div class="block yd-block">
@@ -821,6 +821,37 @@ function renderYard(y, meta) {
 
   $('#lessonBody').innerHTML = body + (y.confidence && y.confidence !== 'high'
     ? `<div class="block empty" style="font-size:12px">部分内容依据网络资料整理，与课本若有出入请以课本为准。</div>` : '');
+  bindTapChars();
+}
+
+/**
+ * 把字符串里的汉字包成可点击的 <span class="tap-ch">，
+ * 点一下就能看笔顺、拼音、部首、组词——与生字卡片一致。
+ * 标点、数字、括号等原样保留，不影响排版。
+ */
+function tapChars(text) {
+  if (!text) return '';
+  let out = '';
+  for (const ch of String(text)) {
+    if (/[\u4e00-\u9fff]/.test(ch)) {
+      out += `<span class="tap-ch" data-ch="${esc(ch)}">${esc(ch)}</span>`;
+    } else {
+      out += esc(ch);
+    }
+  }
+  return out;
+}
+
+/** 绑定园地内所有可点击汉字 */
+function bindTapChars() {
+  $$('#lessonBody .tap-ch, #lessonBody .yd-char').forEach(el => {
+    if (el.dataset.bound) return;
+    el.dataset.bound = '1';
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      openStroke(el.dataset.ch);
+    });
+  });
 }
 
 function showLesson() {

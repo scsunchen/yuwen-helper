@@ -699,12 +699,36 @@ body { padding-bottom: 40px; }
 .yd-char-row:last-child { border-bottom: none; }
 .yd-words { flex: 1 1 auto; min-width: 140px; color: var(--text); }
 .yd-chars { display: flex; gap: 5px; flex-wrap: wrap; }
+
+/* 园地里所有可点的汉字（点击看笔顺/拼音/组词） */
+.yd-char,
+.tap-ch {
+  cursor: pointer;
+  transition: background-color .15s, color .15s, transform .1s;
+}
 .yd-char {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; border-radius: 6px;
   background: #fff4f4; color: var(--primary);
   font-size: 16px; font-weight: 600;
 }
+.yd-char:hover { background: #ffe4e4; transform: translateY(-1px); }
+.yd-char:active { transform: scale(.94); }
+
+/* 正文里的字：默认不加装饰，只在下划线提示可点，避免影响阅读 */
+.tap-ch {
+  border-bottom: 1px dashed rgba(214, 78, 78, .35);
+  padding-bottom: 1px;
+}
+.tap-ch:hover {
+  background: #fff0f0; color: var(--primary);
+  border-radius: 3px;
+}
+.tap-ch:active { background: #ffe0e0; }
+
+/* 日积月累 / 我爱阅读里的字，用更轻的提示（不打断整句观感） */
+.yd-poem-line .tap-ch,
+.yd-para .tap-ch { border-bottom-color: rgba(214, 78, 78, .22); }
 
 /* 日积月累 */
 .yd-poem { text-align: center; padding: 12px 0 4px; }
