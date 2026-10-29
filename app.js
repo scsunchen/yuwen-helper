@@ -30,6 +30,7 @@ const state = {
   _audio2: null,       // 课文朗读音频播放器
   versionCache: {},    // 版本 id -> 版本索引（避免重复请求）
   bookCache: {},       // "版本id/册key" -> 册索引（避免重复请求）
+  yardCache: {},       // "版本id/册目录" -> 语文园地集合
   progress: {},        // "版本id/课id" -> 'learning' | 'done'
   stars: [],           // 收藏的生字（按收藏时间倒序）
 };
@@ -517,6 +518,13 @@ function lessonItemHTML(l, keyword) {
   const st = getStatus(l.id);
   const stTag = st === 'done' ? '<span class="li-status st-done">✓ 已掌握</span>'
               : st === 'learning' ? '<span class="li-status st-learning">学习中</span>' : '';
+  if (l.kind === 'yard') {
+    return `<div class="lesson-item li-yard" data-id="${esc(l.id)}">
+      <div class="li-title">📖 ${title}</div>
+      <div class="li-unit">语文园地</div>
+      <div class="li-badge badge-yard">园地</div>
+    </div>`;
+  }
   return `<div class="lesson-item ${l.stub ? '' : 'has-content'}" data-id="${esc(l.id)}">
     <div class="li-title">${title}${stTag}</div>
     <div class="li-unit">${esc(l.lessonType || '')}</div>
@@ -734,6 +742,19 @@ async function openLesson(id, bookKey) {
   $('#lessonBody').innerHTML = '<div class="loading">加载中</div>';
   $('#goCharsBtn').hidden = true;
 
+  // 语文园地：数据在 yards.json 中，走独立渲染
+  if (meta.kind === 'yard') {
+    try {
+      const yd = await loadYards(b.dir);
+      const y = (yd.yards || []).find(x => x.id === id);
+      if (!y) throw new Error('未找到该园地内容');
+      renderYard(y, meta);
+    } catch (err) {
+      $('#lessonBody').innerHTML = `<div class="block empty">园地数据加载失败：${esc(err.message)}</div>`;
+    }
+    return;
+  }
+
   try {
     // 路径完全由「版本 id + 册次目录」决定，不含任何硬编码版本名
     const vid = state.setup.textbookId;
@@ -745,6 +766,61 @@ async function openLesson(id, bookKey) {
   } catch (err) {
     $('#lessonBody').innerHTML = `<div class="block empty">课文数据加载失败：${esc(err.message)}</div>`;
   }
+}
+
+/** 加载某册的语文园地集合（每册一次，约 30KB） */
+async function loadYards(dir) {
+  const vid = state.setup.textbookId;
+  const key = `${vid}/${dir}`;
+  if (state.yardCache[key]) return state.yardCache[key];
+  const data = await getJSON(
+    `${DATA}textbook/${encodeURIComponent(vid)}/${encodeURIComponent(dir)}/yards.json`
+  );
+  state.yardCache[key] = data;
+  return data;
+}
+
+/** 渲染语文园地详情页 */
+function renderYard(y, meta) {
+  const secName = (s) => esc(s.name);
+  const body = (y.sections || []).map(s => {
+    let inner = '';
+    if (s.type === 'chars') {
+      inner = (s.items || []).map(it => {
+        if (typeof it === 'string') return `<div class="yd-line">${esc(it)}</div>`;
+        const words = it.words || '';
+        const chars = it.chars || '';
+        return `<div class="yd-char-row">
+          <span class="yd-words">${esc(words)}</span>
+          ${chars ? `<span class="yd-chars">${[...chars.replace(/\s/g, '')].map(c =>
+            `<span class="yd-char">${esc(c)}</span>`).join('')}</span>` : ''}
+        </div>`;
+      }).join('');
+    } else if (s.type === 'poem') {
+      inner = `<div class="yd-poem">${(s.items || []).map((t, i) =>
+        `<div class="${i === 0 ? 'yd-poem-title' : i === 1 ? 'yd-poem-author' : 'yd-poem-line'}">${esc(t)}</div>`
+      ).join('')}</div>`;
+    } else if (s.type === 'article') {
+      inner = (s.items || []).map((t, i) =>
+        `<p class="yd-para${i === 0 ? ' yd-art-title' : ''}">${esc(t)}</p>`).join('');
+    } else {
+      inner = (s.items || []).map(t => `<div class="yd-line">${esc(t)}</div>`).join('');
+    }
+    if (s.tip) inner += `<div class="yd-tip">${esc(s.tip)}</div>`;
+    return `<div class="block yd-block">
+      <h3 class="yd-h3">${secName(s)}</h3>
+      <div class="yd-body">${inner}</div>
+    </div>`;
+  }).join('');
+
+  $('#lessonTitle').textContent = y.title;
+  $('#lessonType').textContent = '语文园地';
+  $('#lessonMeta').textContent = `${meta.unit} · ${state.book?.textbook || ''}`;
+  $('#statusRow').hidden = true;
+  $('#goCharsBtn').hidden = true;
+
+  $('#lessonBody').innerHTML = body + (y.confidence && y.confidence !== 'high'
+    ? `<div class="block empty" style="font-size:12px">部分内容依据网络资料整理，与课本若有出入请以课本为准。</div>` : '');
 }
 
 function showLesson() {
@@ -765,6 +841,9 @@ function renderPyLine(pairs) {
 function renderLesson(L) {
   // 换课时先停掉上一课的朗读音频与语音合成，避免后台继续出声
   stopAllAudio();
+
+  // 从语文园地切回课文时，恢复被园地页隐藏的栏目
+  $('#statusRow').hidden = false;
 
   $('#lessonTitle').textContent = L.title;
   $('#lessonType').textContent = L.lessonType || '';

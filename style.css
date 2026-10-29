@@ -668,3 +668,50 @@ body { padding-bottom: 40px; }
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: .7; transform: scale(1.08); }
 }
+
+/* ============ 语文园地 ============ */
+.lesson-item.li-yard {
+  background: linear-gradient(90deg, #fff8ec 0%, #fffdf8 100%);
+  border-left: 3px solid #e8a33d;
+}
+.lesson-item.li-yard .li-title { font-weight: 600; color: #a8661b; }
+.badge-yard {
+  background: #fdf1dc; color: #b8771f; border: 1px solid #f0d9b0;
+}
+
+.yd-block { padding-bottom: 6px; }
+.yd-h3 {
+  font-size: 15px; font-weight: 700; color: var(--primary);
+  margin: 4px 0 10px; padding-left: 9px; border-left: 3px solid var(--primary);
+}
+.yd-body { font-size: 15px; line-height: 2; color: var(--text); }
+.yd-line { margin: 4px 0; }
+.yd-tip {
+  margin-top: 8px; font-size: 13px; color: var(--text-sub);
+  background: #f7f9fc; border-radius: 8px; padding: 8px 10px; line-height: 1.7;
+}
+
+/* 识字加油站：词语 + 要认的字 */
+.yd-char-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 7px 0; border-bottom: 1px dashed #eef1f6;
+}
+.yd-char-row:last-child { border-bottom: none; }
+.yd-words { flex: 1 1 auto; min-width: 140px; color: var(--text); }
+.yd-chars { display: flex; gap: 5px; flex-wrap: wrap; }
+.yd-char {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px;
+  background: #fff4f4; color: var(--primary);
+  font-size: 16px; font-weight: 600;
+}
+
+/* 日积月累 */
+.yd-poem { text-align: center; padding: 12px 0 4px; }
+.yd-poem-title { font-size: 17px; font-weight: 700; letter-spacing: 2px; margin-bottom: 2px; }
+.yd-poem-author { font-size: 13px; color: var(--text-sub); margin-bottom: 10px; }
+.yd-poem-line { font-size: 16px; line-height: 2.1; letter-spacing: 1px; }
+
+/* 我爱阅读 */
+.yd-para { margin: 6px 0; text-indent: 2em; line-height: 2; }
+.yd-para.yd-art-title { text-indent: 0; text-align: center; font-weight: 700; font-size: 16px; margin-bottom: 8px; }
