@@ -786,6 +786,7 @@ function renderYard(y, meta) {
   const body = (y.sections || []).map(s => {
     let inner = '';
     if (s.type === 'chars') {
+      // 仅「识字加油站」的字可点击看笔顺/拼音/组词
       inner = (s.items || []).map(it => {
         if (typeof it === 'string') return `<div class="yd-line">${tapChars(it)}</div>`;
         const words = it.words || '';
@@ -798,13 +799,13 @@ function renderYard(y, meta) {
       }).join('');
     } else if (s.type === 'poem') {
       inner = `<div class="yd-poem">${(s.items || []).map((t, i) =>
-        `<div class="${i === 0 ? 'yd-poem-title' : i === 1 ? 'yd-poem-author' : 'yd-poem-line'}">${i >= 2 ? tapChars(t) : esc(t)}</div>`
+        `<div class="${i === 0 ? 'yd-poem-title' : i === 1 ? 'yd-poem-author' : 'yd-poem-line'}">${esc(t)}</div>`
       ).join('')}</div>`;
     } else if (s.type === 'article') {
       inner = (s.items || []).map((t, i) =>
-        `<p class="yd-para${i === 0 ? ' yd-art-title' : ''}">${i === 0 ? esc(t) : tapChars(t)}</p>`).join('');
+        `<p class="yd-para${i === 0 ? ' yd-art-title' : ''}">${esc(t)}</p>`).join('');
     } else {
-      inner = (s.items || []).map(t => `<div class="yd-line">${tapChars(t)}</div>`).join('');
+      inner = (s.items || []).map(t => `<div class="yd-line">${esc(t)}</div>`).join('');
     }
     if (s.tip) inner += `<div class="yd-tip">${esc(s.tip)}</div>`;
     return `<div class="block yd-block">
@@ -825,7 +826,7 @@ function renderYard(y, meta) {
 }
 
 /**
- * 把字符串里的汉字包成可点击的 <span class="tap-ch">，
+ * 把字符串里的汉字包成可点击的 <span class="tap-ch">（仅用于识字加油站），
  * 点一下就能看笔顺、拼音、部首、组词——与生字卡片一致。
  * 标点、数字、括号等原样保留，不影响排版。
  */

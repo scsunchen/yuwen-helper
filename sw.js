@@ -6,7 +6,7 @@
  *   - 首次访问后，全部已加载资源均可离线使用
  * ================================================================== */
 
-const VERSION = 'v2.16.0';
+const VERSION = 'v2.16.1';
 const STATIC_CACHE = `yw-static-${VERSION}`;
 const DATA_CACHE = `yw-data-${VERSION}`;
 
