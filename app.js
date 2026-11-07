@@ -1540,6 +1540,26 @@ async function main() {
   loadStars();
 
   $('#backBtn').addEventListener('click', goBack);
+  $('#forceRefreshBtn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if (!confirm('将清除本机缓存并重新下载数据，确定继续吗？')) return;
+    btn.disabled = true;
+    toast('正在清除缓存…');
+    try {
+      // 1. 清空所有 Cache Storage（静态骨架 + 课文/笔顺数据）
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+      // 2. 注销 Service Worker（下次加载会重新注册并拉取最新资源）
+      if (navigator.serviceWorker) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+    } catch (err) { /* 尽力清理，失败不阻断刷新 */ }
+    toast('缓存已清除，正在刷新…');
+    setTimeout(() => location.reload(), 400);
+  });
   $('#setupBtn').addEventListener('click', async () => {
     // 确保版本索引就绪，才能正确显示年级与可用性
     if (!state.versionBook && state.setup.textbookId) {
@@ -1572,7 +1592,19 @@ main();
 // ==================================================================
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      // 新版本 SW 就绪后自动提示刷新（sw.js 使用 skipWaiting，激活即接管）
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'activated' && reg.active) {
+            toast('已更新到新版本，正在刷新…');
+            setTimeout(() => location.reload(), 800);
+          }
+        });
+      });
+    }).catch(() => {
       /* 注册失败不影响正常使用，仅失去离线能力 */
     });
   });

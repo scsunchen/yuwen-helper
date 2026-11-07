@@ -90,6 +90,15 @@ body { padding-bottom: 40px; }
   transition: transform .12s;
 }
 .primary-btn:active { transform: scale(.98); }
+.secondary-btn {
+  width: 100%; padding: 11px; margin-top: 10px;
+  background: #fff; color: var(--primary, #d94f4f);
+  border: 1.5px solid rgba(217,79,79,.45); border-radius: 12px;
+  font-size: 14.5px; font-weight: 600; cursor: pointer;
+  transition: transform .12s;
+}
+.secondary-btn:active { transform: scale(.98); }
+.secondary-btn:disabled { opacity: .55; }
 .hint { text-align: center; color: var(--text-light); font-size: 12px; margin: 12px 0 0; }
 
 /* ==================== 当前教材条 ==================== */
