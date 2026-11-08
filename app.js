@@ -28,6 +28,7 @@ const state = {
   initialMap: null,    // 字 -> 拼音首字母（音序，大写），data/hanzi/initial.json
   pinyinOn: null,      // 课文原文是否开启逐字拼音（低年级默认开，用户可关）
   _audio2: null,       // 课文朗读音频播放器
+  _range: null,        // 正在按行播放的区间 {s,e}
   versionCache: {},    // 版本 id -> 版本索引（避免重复请求）
   bookCache: {},       // "版本id/册key" -> 册索引（避免重复请求）
   yardCache: {},       // "版本id/册目录" -> 语文园地集合
@@ -262,8 +263,9 @@ function speak(text, rate) {
 }
 
 /** 带喇叭图标的朗读按钮 HTML */
-function speakBtn(text, cls, title) {
-  return `<button class="${cls || 'speak-inline'}" data-speak="${esc(text)}" title="${esc(title || '朗读')}">🔊</button>`;
+function speakBtn(text, cls, title, lineIdx) {
+  const dl = (lineIdx === undefined || lineIdx === null) ? '' : ` data-line="${lineIdx}"`;
+  return `<button class="${cls || 'speak-inline'}"${dl} data-speak="${esc(text)}" title="${esc(title || '朗读')}">🔊</button>`;
 }
 
 // ---------- 页面切换 ----------
@@ -560,9 +562,11 @@ function bindHomeEvents() {
       const playing = sp.classList.contains('speaking');
       document.querySelectorAll('[data-speak].speaking')
         .forEach(b => b.classList.remove('speaking'));
-      if (playing) { stopSpeak(); return; }
+      if (playing) { stopSpeak(); stopAllAudio(); return; }
       sp.classList.add('speaking');
       setTimeout(() => sp.classList.remove('speaking'), 6000);
+      // 有整篇音频 + 时间轴时，用同一条 mp3 从该行播放（音色与「听课文」完全一致）
+      if (sp.dataset.line !== undefined && playLessonLine(parseInt(sp.dataset.line, 10))) return;
       speak(sp.dataset.speak, sp.dataset.rate ? parseFloat(sp.dataset.rate) : undefined);
       return;
     }
@@ -929,7 +933,7 @@ function renderLesson(L) {
     if (hasPy && state.pinyinOn === null) state.pinyinOn = loadPyPref();
     const pyOn = hasPy && state.pinyinOn;
     html += `<div class="block">
-      <h3>课文原文${L.audio ? `<button class="audio-btn" id="audioBtn" data-src="${esc(L.audio)}" title="播放课文朗读音频">▶ 听课文</button>` : ''}${speakBtn(fullText, 'speak-inline', '朗读课文')}</h3>
+      <h3>课文原文${L.audio ? `<button class="audio-btn" id="audioBtn" data-src="${esc(L.audio)}" title="播放课文朗读音频">▶ 听课文</button>` : speakBtn(fullText, 'speak-inline', '朗读课文')}</h3>
       ${hasPy ? `<div class="py-toggle">
         <button class="py-switch${state.pinyinOn ? ' on' : ''}" id="pySwitch">${state.pinyinOn ? '隐藏拼音' : '显示拼音'}</button>
         <span class="py-hint">${state.pinyinOn ? '拼音标注与课本一致' : '低年级可开启逐字注音'}</span>
@@ -937,7 +941,7 @@ function renderLesson(L) {
       <div class="poem ${L.lessonType === '古诗' ? 'center' : ''} ${pyOn ? 'with-py' : ''}">
         ${L.text.map((t, i) => {
           const py = pyOn && L.pinyin[i] ? L.pinyin[i] : null;
-          return `<p>${py ? renderPyLine(py) : esc(t)}${speakBtn(t, 'speak-inline', '朗读本句')}</p>`;
+          return `<p data-line="${i}">${py ? renderPyLine(py) : esc(t)}${speakBtn(t, 'speak-inline', '朗读本句', i)}</p>`;
         }).join('')}
       </div>
     </div>`;
@@ -1015,44 +1019,162 @@ function stopAllAudio() {
     try { a.pause(); } catch (e) {}
     state._audio2 = null;
   }
+  state._range = null;
+  highlightLineAt(-1);
   try { if (SPEECH_OK) speechSynthesis.cancel(); } catch (e) {}
+}
+
+/** 统一的课文音频元素：「听课文」与逐句朗读共用同一条 mp3，音色一致且不会同时出声 */
+function ensureLessonAudio(src) {
+  let abs = src;
+  try { abs = new URL(src, location.href).href; } catch (e) {}
+  const cur = state._audio2;
+  if (cur && cur.src === abs) return cur;
+  stopAllAudio();
+  const a = new Audio(src);
+  a.preload = 'auto';
+  state._audio2 = a;
+  a.addEventListener('timeupdate', () => {
+    // 按行播放：到该行末尾自动停
+    if (state._range && a.currentTime >= state._range.e - 0.04) {
+      state._range = null;
+      try { a.pause(); } catch (e) {}
+    }
+    highlightLineAt(a.currentTime);
+  });
+  a.addEventListener('ended', () => highlightLineAt(-1));
+  return a;
+}
+
+/** 高亮正在朗读的那一行（idx<0 表示清除） */
+function setPlayingLine(idx) {
+  document.querySelectorAll('.poem p.playing').forEach(el => {
+    if (parseInt(el.dataset.line, 10) !== idx) el.classList.remove('playing');
+  });
+  if (idx >= 0) {
+    const el = document.querySelector(`.poem p[data-line="${idx}"]`);
+    if (el && !el.classList.contains('playing')) {
+      el.classList.add('playing');
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+}
+
+/** 按播放进度高亮对应行（t<0 表示清除） */
+function highlightLineAt(t) {
+  const L = state.lesson;
+  const tl = L && L.audioTimeline;
+  if (!tl) return;
+  let idx = -1;
+  if (t >= 0) {
+    for (let i = 0; i < tl.length; i++) {
+      const g = tl[i];
+      if (g && t >= g.s - 0.02 && t < g.e) { idx = i; break; }
+    }
+  }
+  setPlayingLine(idx);
+}
+
+/** 点某一句：直接播放该句的独立音频文件（与整篇同一套合成、同一音色） */
+function playLessonLine(i) {
+  const L = state.lesson;
+  if (!L) return false;
+  const lineSrc = L.audioLines && L.audioLines[i];
+  if (lineSrc) {
+    stopAllAudio();
+    const a = new Audio(lineSrc);
+    a.preload = 'auto';
+    state._audio2 = a;
+    a.addEventListener('ended', () => { setPlayingLine(-1); if (state._audio2 === a) state._audio2 = null; });
+    a.addEventListener('error', () => { setPlayingLine(-1); toast('朗读音频加载失败'); });
+    a.play().catch(() => toast('请先点击页面任意处再试'));
+    setPlayingLine(i);
+    return true;
+  }
+  // 兜底：整篇 mp3 + 时间轴定位
+  if (!L.audio || !Array.isArray(L.audioTimeline)) return false;
+  const g = L.audioTimeline[i];
+  if (!g || !(g.e > g.s)) return false;
+  const a = ensureLessonAudio(L.audio);
+  state._range = { s: g.s, e: g.e };
+  try { a.currentTime = g.s; } catch (e) {}
+  const p = a.play();
+  if (p && p.catch) p.catch(() => toast('请先点击页面任意处再试'));
+  highlightLineAt(g.s + 0.01);
+  return true;
+}
+
+/** 统一的课文音频元素：「听课文」与逐句朗读共用同一条 mp3，音色一致且不会同时出声 */
+function ensureLessonAudio(src) {
+  let abs = src;
+  try { abs = new URL(src, location.href).href; } catch (e) {}
+  const cur = state._audio2;
+  if (cur && cur.src === abs) return cur;
+  stopAllAudio();
+  const a = new Audio(src);
+  a.preload = 'auto';
+  state._audio2 = a;
+  a.addEventListener('timeupdate', () => {
+    // 按行播放：到该行末尾自动停
+    if (state._range && a.currentTime >= state._range.e - 0.04) {
+      state._range = null;
+      try { a.pause(); } catch (e) {}
+    }
+    highlightLineAt(a.currentTime);
+  });
+  a.addEventListener('ended', () => highlightLineAt(-1));
+  return a;
+}
+
+/** 高亮正在朗读的那一行（idx<0 表示清除） */
+function setPlayingLine(idx) {
+  document.querySelectorAll('.poem p.playing').forEach(el => {
+    if (parseInt(el.dataset.line, 10) !== idx) el.classList.remove('playing');
+  });
+  if (idx >= 0) {
+    const el = document.querySelector(`.poem p[data-line="${idx}"]`);
+    if (el && !el.classList.contains('playing')) {
+      el.classList.add('playing');
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+}
+
+/** 按播放进度高亮对应行（t<0 表示清除） */
+function highlightLineAt(t) {
+  const L = state.lesson;
+  const tl = L && L.audioTimeline;
+  if (!tl) return;
+  let idx = -1;
+  if (t >= 0) {
+    for (let i = 0; i < tl.length; i++) {
+      const g = tl[i];
+      if (g && t >= g.s - 0.02 && t < g.e) { idx = i; break; }
+    }
+  }
+  setPlayingLine(idx);
 }
 
 /** 课文音频播放：同一按钮在播放/暂停之间切换 */
 function toggleLessonAudio(btn, src) {
   if (!src) return;
-  // 与 Audio.src 做同源规范化比较（浏览器会把中文等编码成 %XX，不能直接 endsWith 原文）
-  let abs = src;
-  try { abs = new URL(src, location.href).href; } catch (e) {}
-
-  const cur = state._audio2;
-  const same = !!(cur && cur.src === abs);
-
-  // 情况一：本课音频正在播放 → 暂停
-  if (same && !cur.paused) {
-    cur.pause();
-    return;
-  }
-  // 情况二：本课音频处于暂停态 → 接着播
-  if (same && cur.paused) {
-    cur.play().catch(() => toast('请先点击页面任意处再试'));
-    return;
-  }
-
-  // 情况三：切换课程/首次播放 → 先停掉旧的，再新建
-  stopAllAudio();
-
-  const a = new Audio(src);
-  a.preload = 'auto';
-  state._audio2 = a;
+  const a = ensureLessonAudio(src);
   const setLabel = (playing) => {
     btn.textContent = playing ? '⏸ 暂停' : '▶ 听课文';
     btn.classList.toggle('playing', playing);
   };
   a.onplay = () => setLabel(true);
   a.onpause = () => setLabel(false);
-  a.onended = () => { setLabel(false); if (state._audio2 === a) state._audio2 = null; };
-  a.onerror = () => { setLabel(false); if (state._audio2 === a) state._audio2 = null; toast('音频加载失败，请检查网络'); };
+  a.onended = () => setLabel(false);
+  a.onerror = () => { setLabel(false); toast('音频加载失败，请检查网络'); };
+
+  // 正在播放 → 暂停；若在按行播放则转为整篇连续播放
+  if (!a.paused) {
+    if (state._range) { state._range = null; return; }
+    a.pause(); return;
+  }
+  // 接着播（听课文 = 连续播到课末，不受单行区间限制）
+  state._range = null;
   const p = a.play();
   if (p && p.catch) p.catch(() => { setLabel(false); toast('请先点击页面任意处再试'); });
 }

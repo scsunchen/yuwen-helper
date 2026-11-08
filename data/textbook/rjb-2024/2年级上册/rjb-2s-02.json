@@ -1420,5 +1420,34 @@
    ]
   ]
  ],
- "audio": "data/audio/2年级上册/rjb-2s-02.mp3"
+ "audio": "data/audio/2年级上册/rjb-2s-02.mp3",
+ "audioTimeline": [
+  {
+   "s": 0.0,
+   "e": 22.45
+  },
+  {
+   "s": 22.45,
+   "e": 45.74
+  },
+  {
+   "s": 45.74,
+   "e": 55.06
+  },
+  {
+   "s": 55.06,
+   "e": 72.39
+  },
+  {
+   "s": 72.39,
+   "e": 81.49
+  }
+ ],
+ "audioLines": [
+  "data/audio/2年级上册/lines/rjb-2s-02/l01.mp3",
+  "data/audio/2年级上册/lines/rjb-2s-02/l02.mp3",
+  "data/audio/2年级上册/lines/rjb-2s-02/l03.mp3",
+  "data/audio/2年级上册/lines/rjb-2s-02/l04.mp3",
+  "data/audio/2年级上册/lines/rjb-2s-02/l05.mp3"
+ ]
 }

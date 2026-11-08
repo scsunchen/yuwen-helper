@@ -198,6 +198,13 @@ body { padding-bottom: 40px; }
 }
 .poem.center { text-align: center; }
 .poem.center p { letter-spacing: 3px; }
+/* 正在朗读的那一行：左侧竖条 + 淡底色，便于跟读时定位 */
+.poem p[data-line] { position: relative; padding: 2px 8px 2px 10px; border-radius: 8px;
+  transition: background .18s, box-shadow .18s; }
+.poem p.playing {
+  background: linear-gradient(90deg, rgba(74, 158, 255, .16), rgba(74, 158, 255, .04));
+  box-shadow: inset 3px 0 0 #4a9eff;
+}
 
 /* 课文朗读音频按钮 */
 .audio-btn {
