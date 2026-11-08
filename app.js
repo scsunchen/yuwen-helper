@@ -23,6 +23,10 @@ const state = {
   loopTimer: null,
   speed: 5,
   charInfoMap: {},     // 册 key -> 字形信息（含笔画）
+  strokePool: {},      // 字 -> 字形信息（按课分片累积，跨课复用）
+  shardLoaded: {},     // 已加载过的笔顺分片 key
+  bookWideTried: {},   // 已尝试整册兜底的册 key
+  _strokeScope: null,  // 当前笔顺作用域（课 id 或园地 id）
   metaMap: {},         // 字 -> 轻量信息（拼音/部首/结构/笔画数）
   wordMap: null,       // 字 -> 组词（按年级匹配，data/hanzi/words.json）
   initialMap: null,    // 字 -> 拼音首字母（音序，大写），data/hanzi/initial.json
@@ -786,6 +790,7 @@ async function loadYards(dir) {
 
 /** 渲染语文园地详情页 */
 function renderYard(y, meta) {
+  state._strokeScope = y && y.id;   // 园地识字加油站的字走专属笔顺分片
   const secName = (s) => esc(s.name);
   const body = (y.sections || []).map(s => {
     let inner = '';
@@ -1202,27 +1207,51 @@ function bindCharsEvents() {
   $('#goCharsBtn').addEventListener('click', () => renderCharsPage());
 }
 
-async function ensureCharInfo(chars) {
-  // 按册加载笔顺分片（key 含版本，避免多版本间串数据）
-  if (!state.book) return {};
+/** 按课/园地加载笔顺分片（每课约 60KB，远小于整册 2.9MB） */
+async function loadStrokeShard(scope) {
+  if (!state.book || !scope) return false;
   const vid = state.setup.textbookId || 'default';
-  const key = `${vid}/${state.book.key}`;
-  if (!state.charInfoMap[key]) {
-    try {
-      state.charInfoMap[key] = await getJSON(`${DATA}hanzi/strokes/g${state.book.key}.json`);
-    } catch (e) {
-      state.charInfoMap[key] = {};
+  const key = `${vid}/${state.book.key}/${scope}`;
+  if (state.shardLoaded[key]) return true;
+  try {
+    const d = await getJSON(`${DATA}hanzi/strokes/lessons/${state.book.key}/${encodeURIComponent(scope)}.json`);
+    Object.assign(state.strokePool, d || {});
+    state.shardLoaded[key] = true;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function ensureCharInfo(chars, scope) {
+  if (!state.book) return {};
+  const list = (chars || []).filter(c => typeof c === 'string' && c);
+  const sid = scope || state._strokeScope;
+
+  // 组词表 / 音序表 与 笔顺分片 并行拉取，减少等待
+  const jobs = [ensureWordMap(), ensureInitialMap()];
+  if (sid) jobs.push(loadStrokeShard(sid));
+  await Promise.all(jobs);
+
+  const lack = list.filter(c => !(state.strokePool[c] && state.strokePool[c].st));
+  if (lack.length) {
+    // 分片没覆盖（旧版本缓存 / 园地字）→ 用整册兜底一次
+    const vid = state.setup.textbookId || 'default';
+    const bk = `${vid}/${state.book.key}`;
+    if (!state.bookWideTried[bk]) {
+      state.bookWideTried[bk] = true;
+      try {
+        const d = await getJSON(`${DATA}hanzi/strokes/g${state.book.key}.json`);
+        Object.assign(state.strokePool, d || {});
+      } catch (e) {}
     }
   }
-  // 兜底：全量 meta（仅拼音/部首/结构/笔画数）
-  if (!Object.keys(state.metaMap).length) {
+
+  // 仍无笔顺 → 只取拼音/部首/笔画数兜底
+  if (list.some(c => !(state.strokePool[c] && state.strokePool[c].st)) && !Object.keys(state.metaMap).length) {
     try { state.metaMap = await getJSON(`${DATA}hanzi/meta.json`); } catch (e) { state.metaMap = {}; }
   }
-  // 组词表（全量一次，含按年级匹配的词语）
-  await ensureWordMap();
-  // 音序表（全量一次，字 -> 拼音首字母大写）
-  await ensureInitialMap();
-  return state.charInfoMap[key] || {};
+  return state.strokePool;
 }
 
 /** 加载「生字组词」表（全量约 60KB，只请求一次） */
@@ -1252,10 +1281,9 @@ function wordsOf(ch) {
   return (v && v.w) ? v.w : [];
 }
 
-/** 当前册已加载的笔顺映射 */
+/** 当前已加载的笔顺映射（跨课累积，已加载过的字不重复请求） */
 function currentStrokeMap() {
-  const vid = state.setup.textbookId || 'default';
-  return state.charInfoMap[`${vid}/${state.book?.key}`] || {};
+  return state.strokePool || {};
 }
 
 async function renderCharsPage() {
@@ -1263,6 +1291,7 @@ async function renderCharsPage() {
   if (!L) return;
   showPage('chars');
   $('#pageTitle').textContent = `${L.title} · 生字词`;
+  state._strokeScope = L.id;
 
   // 立刻渲染标签，避免等待期间空白
   renderCharTabs();
@@ -1275,20 +1304,20 @@ async function renderCharsPage() {
     return;
   }
 
-  // 先用已缓存的 meta 立即出卡片（含拼音/部首/结构/笔画数），
-  // 笔顺分片在后台加载，加载完再补全“是否可播放”的标记。
-  const ready = Object.keys(currentStrokeMap()).length > 0;
+  // 先用已缓存的分片立即出卡片；未命中的字再拉本课分片补齐
+  const poolNow = currentStrokeMap();
+  const ready = chars.some(c => poolNow[c] && poolNow[c].st);
   $('#charContent').innerHTML = `
     <div class="section-label">点击汉字查看拼音、笔画数、笔顺动画</div>
     ${L.charsAuto ? '<div class="auto-note">本课讲解尚未整理，生字表由「本册写字表」自动分配，供预习参考。</div>' : ''}
-    ${ready ? '' : '<div class="auto-note" style="background:#f0f6ff;border-left-color:#3a7bd5;color:#2a5298">正在加载本册笔顺数据，稍后即可播放动画…</div>'}
+    ${ready ? '' : '<div class="auto-note" style="background:#f0f6ff;border-left-color:#3a7bd5;color:#2a5298">正在加载本课笔顺数据，稍后即可播放动画…</div>'}
     <div class="char-grid">${renderCharCards(chars)}</div>`;
 
   bindCharCards();
 
   // 后台加载笔顺分片
   try {
-    await ensureCharInfo();
+    await ensureCharInfo(chars, L.id);
     // 若仍停留在本页且未切标签，刷新卡片状态
     if (state.page === 'chars' && state.charTab !== 'words') {
       const stillChars = state.charTab === 'one' ? (L.classOne || []) : (L.classTwo || []);
@@ -1401,13 +1430,13 @@ function renderWords(L) {
 // 五、笔顺动画弹层
 // ==================================================================
 async function openStroke(ch) {
-  // 笔顺分片可能尚未就绪（首次点击时后台仍在加载）
-  if (!Object.keys(currentStrokeMap()).length) {
-    toast('正在加载本册笔顺数据…');
+  // 目标字不在已加载的分片里时，先补齐当前作用域（课/园地）
+  if (!(currentStrokeMap()[ch] && currentStrokeMap()[ch].st)) {
+    toast('正在加载「' + ch + '」的笔顺…');
   }
   let strokeMap;
   try {
-    strokeMap = await ensureCharInfo();
+    strokeMap = await ensureCharInfo([ch], state._strokeScope);
   } catch (e) {
     strokeMap = currentStrokeMap();
   }
