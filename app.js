@@ -591,6 +591,7 @@ function bindHomeEvents() {
 
 /** 我的生字本页面 */
 function renderStarsPage() {
+  state._strokeScope = null;   // 收藏的字跨课，点击时按单字按需取笔顺
   const box = $('#starsContent');
   const n = state.stars.length;
   $('#starCount').textContent = n;
@@ -603,12 +604,19 @@ function renderStarsPage() {
     return;
   }
   box.className = 'char-grid';
-  // 用当前册的笔顺数据渲染；缺失时退化为拼音/笔画信息
+  // 用已加载的笔顺数据渲染；缺失时退化为拼音/笔画信息
   box.innerHTML = renderCharCards(state.stars);
   bindStarCards();
-  // 音序表可能尚未加载（用户直接进生字本时），加载后补一次音序显示
-  if (!state.initialMap) {
-    ensureInitialMap().then(() => {
+  // 冷启动直接进生字本时，词表/meta/音序可能都还没加载 → 并行补一次
+  const needMore = !state.wordMap || !state.initialMap || !Object.keys(state.metaMap).length;
+  if (needMore) {
+    Promise.all([
+      ensureWordMap(),
+      ensureInitialMap(),
+      Object.keys(state.metaMap).length
+        ? Promise.resolve()
+        : getJSON(`${DATA}hanzi/meta.json`).then(d => { state.metaMap = d || {}; }).catch(() => {}),
+    ]).then(() => {
       if (state.page === 'stars' && state.stars.length) {
         box.innerHTML = renderCharCards(state.stars);
         bindStarCards();
@@ -1234,7 +1242,7 @@ async function ensureCharInfo(chars, scope) {
   await Promise.all(jobs);
 
   const lack = list.filter(c => !(state.strokePool[c] && state.strokePool[c].st));
-  if (lack.length) {
+  if (lack.length && sid) {
     // 分片没覆盖（旧版本缓存 / 园地字）→ 用整册兜底一次
     const vid = state.setup.textbookId || 'default';
     const bk = `${vid}/${state.book.key}`;
