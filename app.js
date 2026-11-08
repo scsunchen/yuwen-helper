@@ -1236,10 +1236,11 @@ async function ensureCharInfo(chars, scope) {
   const list = (chars || []).filter(c => typeof c === 'string' && c);
   const sid = scope || state._strokeScope;
 
-  // 组词表 / 音序表 与 笔顺分片 并行拉取，减少等待
-  const jobs = [ensureWordMap(), ensureInitialMap()];
-  if (sid) jobs.push(loadStrokeShard(sid));
-  await Promise.all(jobs);
+  // 笔顺分片里已带组词与音序，优先只拉这一个文件（约 30KB）
+  if (sid) await loadStrokeShard(sid);
+  const needW = list.some(c => !wordsOf(c).length);
+  const needI = list.some(c => !initialOf(c));
+  if (needW || needI) await Promise.all([needW ? ensureWordMap() : null, needI ? ensureInitialMap() : null]);
 
   const lack = list.filter(c => !(state.strokePool[c] && state.strokePool[c].st));
   if (lack.length && sid) {
@@ -1280,13 +1281,21 @@ async function ensureInitialMap() {
 
 /** 取某字的音序首字母（大写），无则返回空串 */
 function initialOf(ch) {
-  return (state.initialMap && state.initialMap[ch]) || '';
+  const v = (state.initialMap && state.initialMap[ch])
+      || (state.strokePool && state.strokePool[ch] && state.strokePool[ch].i);
+  if (v) return v;
+  // 兜底：直接取拼音首字母（z/c/s 即 zh/ch/sh 的音序，零声母亦正确）
+  const py = ((state.strokePool && state.strokePool[ch] && state.strokePool[ch].p)
+      || (state.metaMap && state.metaMap[ch] && state.metaMap[ch].p) || [])[0] || '';
+  return py ? py[0].toUpperCase() : '';
 }
 
-/** 取某个字的组词数组（可能为空） */
+/** 取某个字的组词数组（分片里已带，缺失时回退全量词表） */
 function wordsOf(ch) {
   const v = state.wordMap && state.wordMap[ch];
-  return (v && v.w) ? v.w : [];
+  if (v && v.w && v.w.length) return v.w;
+  const p = state.strokePool && state.strokePool[ch];
+  return (p && p.w) || [];
 }
 
 /** 当前已加载的笔顺映射（跨课累积，已加载过的字不重复请求） */
